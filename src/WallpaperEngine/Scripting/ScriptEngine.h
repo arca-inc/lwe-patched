@@ -31,6 +31,7 @@ static constexpr ScriptLayerHandle kInvalidLayerHandle = 0;
 class ScriptEngine {
 public:
     static ScriptEngine& instance ();
+    static void resetSingleton ();
 
     ~ScriptEngine ();
     ScriptEngine (const ScriptEngine&) = delete;

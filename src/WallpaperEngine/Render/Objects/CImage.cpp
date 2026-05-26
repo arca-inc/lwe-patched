@@ -432,7 +432,7 @@ bool CImage::loadPuppetMesh (const glm::vec2& size) {
 
 	const std::string puppetVersion = data.size () >= markerSize ? std::string (data.data (), strlen ("MDLV0021")) : "";
 	if (puppetVersion != "MDLV0021" && puppetVersion != "MDLV0023") {
-	    sLog.error ("Unsupported puppet model header ", puppetVersion, " in ", *this->getImage ().model->puppet);
+	    // Silently skip unsupported model versions — wallpaper still renders without puppet animation.
 	    return false;
 	}
 

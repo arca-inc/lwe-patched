@@ -490,7 +490,10 @@ set(COMMON_SOURCES
     src/WallpaperEngine/Scripting/ScriptEngine.h
     src/WallpaperEngine/Scripting/ScriptEngine.cpp
     src/WallpaperEngine/Data/Model/ScriptedDynamicValue.h
-    src/WallpaperEngine/Data/Model/ScriptedDynamicValue.cpp)
+    src/WallpaperEngine/Data/Model/ScriptedDynamicValue.cpp
+
+    src/lwe_bridge.h
+    src/lwe_bridge.cpp)
 
 if(BUILD_TESTING)
     add_executable(
@@ -628,6 +631,15 @@ add_executable(linux-wallpaperengine
     src/main.cpp)
 
 target_link_libraries (linux-wallpaperengine PUBLIC linux-wallpaperengine-lib)
+
+# Minimal CEF subprocess helper — called by CEF with --type=renderer etc.
+# Must not pull in any LWE or Wayland code; just calls CefExecuteProcess and exits.
+add_executable(lwe-cef-subprocess
+    src/lwe_cef_subprocess.cpp)
+target_include_directories(lwe-cef-subprocess PRIVATE ${CEF_INCLUDE_PATH})
+target_link_libraries(lwe-cef-subprocess PRIVATE libcef_lib libcef_dll_wrapper)
+set_target_properties(lwe-cef-subprocess PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${TARGET_OUTPUT_DIRECTORY})
 
 # Install the main executable and shared library via install(TARGETS)
 # so that CMake automatically strips/replaces the build-time RPATH.

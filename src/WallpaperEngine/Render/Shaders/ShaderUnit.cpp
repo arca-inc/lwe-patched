@@ -336,7 +336,7 @@ void ShaderUnit::preprocessRequires () {
 	    continue;
 	}
 
-	sLog.out ("Resolving require module: ", moduleName, " in shader ", this->m_file);
+	// Module resolution is an implementation detail, no need to log it.
 
 	std::string moduleCode = this->resolveRequireModule (moduleName);
 

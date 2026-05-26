@@ -523,10 +523,8 @@ GLuint CPass::compileShader (const char* shader, GLuint type) {
 	if (result == GL_FALSE) {
 	    // shader compilation failed completely, throw an exception
 	    sLog.exception (buffer.str ());
-	} else {
-	    // some warning was emitted, log the error and keep chuging along
-	    sLog.error (buffer.str ());
 	}
+	// Compilation warnings are suppressed — they are driver-specific and not actionable.
     }
 
     return shaderID;
@@ -595,12 +593,9 @@ void CPass::setupShaders () {
 	// free the buffer
 	delete[] logBuffer;
 	if (result == GL_FALSE) {
-	    // shader compilation failed completely, throw an exception
 	    sLog.exception (message);
-	} else {
-	    // some warning was emitted, log the error and keep chuging along
-	    sLog.error (message);
 	}
+	// Link warnings are driver-specific and not actionable.
     }
 
 #if !NDEBUG

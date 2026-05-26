@@ -33,8 +33,10 @@ CWeb::CWeb (
     // use the custom scheme for the wallpaper's files
     const std::string htmlURL = WPSchemeHandlerFactory::generateSchemeName (this->getWeb ().project.workshopId)
 	+ "://root/" + this->getWeb ().filename;
-    this->m_browser
-	= CefBrowserHost::CreateBrowserSync (window_info, this->m_client, htmlURL, browserSettings, nullptr, nullptr);
+    // CreateBrowserSync deadlocks in single-threaded mode because it blocks the
+    // thread that must also pump CefDoMessageLoopWork().  Use async CreateBrowser
+    // and finish initialisation in renderFrame() once OnAfterCreated fires.
+    CefBrowserHost::CreateBrowser (window_info, this->m_client, htmlURL, browserSettings, nullptr, nullptr);
 }
 
 void CWeb::setSize (const int width, const int height) {
@@ -57,6 +59,18 @@ void CWeb::setSize (const int width, const int height) {
 }
 
 void CWeb::renderFrame (const glm::ivec4& viewport) {
+    // Pump CEF so OnPaint delivers pixel data and OnAfterCreated can fire.
+    CefDoMessageLoopWork ();
+
+    // Complete async browser initialisation once OnAfterCreated has fired.
+    if (!this->m_browser) {
+        if (this->m_client->IsCreated ()) {
+            this->m_browser = this->m_client->GetBrowser ();
+        } else {
+            return;
+        }
+    }
+
     // ensure the viewport matches the window size, and resize if needed
     if (viewport.z != this->getWidth () || viewport.w != this->getHeight ()) {
 	this->setSize (viewport.z, viewport.w);
@@ -68,16 +82,6 @@ void CWeb::renderFrame (const glm::ivec4& viewport) {
     glBindFramebuffer (GL_FRAMEBUFFER, this->getWallpaperFramebuffer ());
     // ensure we render over the whole framebuffer
     glViewport (0, 0, this->getWidth (), this->getHeight ());
-
-    // Cef processes all messages, including OnPaint, which renders frame
-    // If there is no OnPaint in message loop, we will not update(render) frame
-    //  This means some frames will not have OnPaint call in cef messageLoop
-    //  Because of that glClear will result in flickering on higher fps
-    //  Do not use glClear until some method to control rendering with cef is supported
-    // We might actually try to use cef to execute javascript, and not using off-screen rendering at all
-    // But for now let it be like this
-    //  glClear (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    CefDoMessageLoopWork ();
 }
 
 void CWeb::updateMouse (const glm::ivec4& viewport) {
@@ -116,8 +120,9 @@ void CWeb::updateMouse (const glm::ivec4& viewport) {
 }
 
 CWeb::~CWeb () {
-    CefDoMessageLoopWork ();
-    this->m_browser->GetHost ()->CloseBrowser (true);
-
+    if (this->m_browser) {
+        CefDoMessageLoopWork ();
+        this->m_browser->GetHost ()->CloseBrowser (true);
+    }
     delete this->m_renderHandler;
 }

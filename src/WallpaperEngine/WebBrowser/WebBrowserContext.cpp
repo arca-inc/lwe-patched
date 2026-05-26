@@ -6,6 +6,13 @@
 #include "include/cef_render_handler.h"
 #include <filesystem>
 #include <random>
+#include <string>
+
+// Defined in lwe_bridge.cpp; non-empty when LWE runs embedded in another process.
+extern std::string g_lwe_subprocess_path;
+
+// CEF can only be initialized once per process lifetime.
+static bool s_cef_alive = false;
 
 using namespace WallpaperEngine::WebBrowser;
 
@@ -76,25 +83,40 @@ WebBrowserContext::WebBrowserContext (WallpaperEngine::Application::WallpaperApp
     // Configurate Chromium
     CefSettings settings;
     std::string cache_path = (std::filesystem::temp_directory_path () / uuid::generate_uuid_v4 ()).string ();
-    // CefString(&settings.locales_dir_path) = "OffScreenCEF/godot/locales";
-    // CefString(&settings.resources_dir_path) = "OffScreenCEF/godot/";
-    // CefString(&settings.framework_dir_path) = "OffScreenCEF/godot/";
-    // CefString(&settings.cache_path) = "OffScreenCEF/godot/";
-    //  CefString(&settings.browser_subprocess_path) = "path/to/client"
     cef_string_utf8_to_utf16 (cache_path.c_str (), cache_path.length (), &settings.root_cache_path);
     settings.windowless_rendering_enabled = true;
 #if defined(CEF_NO_SANDBOX)
     settings.no_sandbox = true;
 #endif
+    // Point CEF at the minimal subprocess helper so it never re-execs the main
+    // binary (which would fail because the main binary needs wallpaper args).
+    // Priority: CGo-embedded path > LWE_CEF_SUBPROCESS_PATH env var.
+    if (!g_lwe_subprocess_path.empty ()) {
+	CefString (&settings.browser_subprocess_path) = g_lwe_subprocess_path;
+    } else if (const char* envPath = std::getenv ("LWE_CEF_SUBPROCESS_PATH")) {
+	if (envPath [0] != '\0') {
+	    CefString (&settings.browser_subprocess_path) = envPath;
+	}
+    }
 
-    // spawns two new processess
-
-    if (!CefInitialize (main_args, settings, this->m_browserApplication, nullptr)) {
-	sLog.exception ("CefInitialize: failed");
+    // CEF can only be initialized once per process; skip if already alive.
+    if (!s_cef_alive) {
+	if (!CefInitialize (main_args, settings, this->m_browserApplication, nullptr)) {
+	    sLog.exception ("CefInitialize: failed");
+	}
+	s_cef_alive = true;
     }
 }
 
 WebBrowserContext::~WebBrowserContext () {
+    // CEF can only be initialized once per process lifetime.  Skip shutdown
+    // when we know the process will call CefInitialize again:
+    //   • embedded CGo mode (g_lwe_subprocess_path set via lwe_set_subprocess_path)
+    //   • hot-swap daemon mode (WEPAPERED_CTRL_SOCK set — main loop re-runs)
+    if (!g_lwe_subprocess_path.empty () || std::getenv ("WEPAPERED_CTRL_SOCK")) {
+	return;
+    }
     sLog.out ("Shutting down CEF");
     CefShutdown ();
+    s_cef_alive = false;
 }

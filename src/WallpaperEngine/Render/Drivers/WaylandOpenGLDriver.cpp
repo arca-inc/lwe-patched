@@ -360,7 +360,7 @@ void WaylandOpenGLDriver::initGLEW () {
     glewExperimental = GL_TRUE;
     if (const GLenum result = glewInit (); result != GLEW_OK) {
 	if (result == GLEW_ERROR_NO_GLX_DISPLAY) {
-	    sLog.out ("Failed to initialize GLEW, but continuing with EGL context: No GLX display");
+	    // Expected on Wayland — EGL context is used instead of GLX, nothing to report.
 	} else {
 	    const char* error = reinterpret_cast<const char*> (glewGetErrorString (result));
 	    sLog.error ("Failed to initialize GLEW: ", error ? error : "Unknown error");
@@ -395,34 +395,26 @@ WaylandOpenGLDriver::~WaylandOpenGLDriver () {
 }
 
 void WaylandOpenGLDriver::dispatchEventQueue () {
-    static bool initialized = false;
-
-    if (!initialized) {
-	initialized = true;
+    if (!m_dispatchInitialized) {
+	m_dispatchInitialized = true;
 
 	for (const auto& viewport : this->getOutput ().getViewports () | std::views::values) {
 	    this->getApp ().update (viewport);
 	}
     }
 
-    // TODO: FRAMETIME CONTROL SHOULD GO BACK TO THE CWALLPAPAERAPPLICATION ONCE ACTUAL PARTICLES ARE IMPLEMENTED
-    // TODO: AS THOSE, MORE THAN LIKELY, WILL REQUIRE OF A DIFFERENT PROCESSING RATE
+    const float minimumTime = 1.0f / this->m_context.settings.render.maximumFPS;
+    const float startTime = this->getRenderTime ();
 
-    // TODO: WRITE A NON-BLOCKING VERSION OF THIS ONCE PARTICLE SIMULATION STARTS WORKING
-    // TODO: OTHERWISE wl_display_dispatch WILL BLOCK IF NO SURFACES ARE BEING DRAWN
-    static float startTime, endTime, minimumTime = 1.0f / this->m_context.settings.render.maximumFPS;
-    // get the start time of the frame
-    startTime = this->getRenderTime ();
-
-    if (wl_display_dispatch (m_waylandContext.display) == -1) {
+    wl_display_flush (m_waylandContext.display);
+    if (wl_display_dispatch_pending (m_waylandContext.display) == -1) {
 	m_requestedExit = true;
     }
 
     m_frameCounter++;
 
-    endTime = this->getRenderTime ();
+    const float endTime = this->getRenderTime ();
 
-    // ensure the frame time is correct to not overrun FPS
     if ((endTime - startTime) < minimumTime) {
 	usleep ((minimumTime - (endTime - startTime)) * CLOCKS_PER_SEC);
     }

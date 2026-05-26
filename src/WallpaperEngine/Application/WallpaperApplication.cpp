@@ -24,6 +24,9 @@
 #include <climits>
 #include <numeric>
 #include <unistd.h>
+extern "C" {
+#include <libavutil/log.h>
+}
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>
 #include <thread>
@@ -61,6 +64,7 @@ void CustomGLDebugCallback (
 }
 
 WallpaperApplication::WallpaperApplication (ApplicationContext& context) : m_context (context) {
+    av_log_set_level (AV_LOG_ERROR);
     this->loadBackgrounds ();
     this->setupProperties ();
     this->setupBrowser ();

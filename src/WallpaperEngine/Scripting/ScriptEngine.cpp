@@ -13,6 +13,7 @@
 #include <cstring>
 #include <future>
 #include <optional>
+#include <fcntl.h>
 #include <poll.h>
 #include <signal.h>
 #include <spawn.h>
@@ -75,6 +76,7 @@ std::optional<pid_t> spawnProcessWithStdout (
     posix_spawn_file_actions_t actions;
     posix_spawn_file_actions_init (&actions);
     posix_spawn_file_actions_adddup2 (&actions, outputPipe[1], STDOUT_FILENO);
+    posix_spawn_file_actions_addopen (&actions, STDERR_FILENO, "/dev/null", O_WRONLY, 0);
     posix_spawn_file_actions_addclose (&actions, outputPipe[0]);
     posix_spawn_file_actions_addclose (&actions, outputPipe[1]);
 
@@ -224,6 +226,10 @@ ScriptEngine& ScriptEngine::instance () {
 	sScriptEngine = std::unique_ptr<ScriptEngine> (new ScriptEngine ());
     }
     return *sScriptEngine;
+}
+
+void ScriptEngine::resetSingleton () {
+    sScriptEngine.reset ();
 }
 
 ScriptEngine::ScriptEngine () {

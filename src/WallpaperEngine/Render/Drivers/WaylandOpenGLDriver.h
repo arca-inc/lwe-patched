@@ -100,6 +100,7 @@ private:
     void finishEGL () const;
 
     uint32_t m_frameCounter = 0;
+    bool m_dispatchInitialized = false;
     ApplicationContext& m_context;
     WaylandMouseInput m_mouseInput;
 

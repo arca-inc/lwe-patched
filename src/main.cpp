@@ -56,7 +56,7 @@ static void ipc_thread_func (int srv_fd) {
 
         if (cmd == "stop") {
             g_ipc_stop.store (true);
-            write (conn, "OK\n", 3);
+            (void) write (conn, "OK\n", 3);
             close (conn);
             if (a) a->signal (SIGTERM);
         } else if (cmd.rfind ("load:", 0) == 0) {
@@ -144,11 +144,11 @@ int main (int argc, char* argv[]) {
 
             // Signal Go that this wallpaper is loaded and rendering is starting.
             if (ready_fd >= 0) {
-                write (ready_fd, "READY\n", 6);
+                (void) write (ready_fd, "READY\n", 6);
                 close (ready_fd);
                 ready_fd = -1;
             } else if (reply_fd_for_this_iter >= 0) {
-                write (reply_fd_for_this_iter, "READY\n", 6);
+                (void) write (reply_fd_for_this_iter, "READY\n", 6);
                 close (reply_fd_for_this_iter);
                 reply_fd_for_this_iter = -1;
             }

@@ -15,9 +15,10 @@ public:
 
     void OnRegisterCustomSchemes (CefRawPtr<CefSchemeRegistrar> registrar) override;
 
-protected:
     const WallpaperEngine::Application::WallpaperApplication& getApplication () const;
     const std::map<std::string, WPSchemeHandlerFactory*>& getHandlerFactories () const;
+
+protected:
 
 private:
     std::map<std::string, WPSchemeHandlerFactory*> m_handlerFactories = {};

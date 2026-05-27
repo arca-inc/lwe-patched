@@ -2,11 +2,13 @@
 #include "CEF/BrowserApp.h"
 #include "WallpaperEngine/Logging/Log.h"
 #include "WallpaperEngine/WebBrowser/CEF/SubprocessApp.h"
+#include "WallpaperEngine/WebBrowser/CEF/WPSchemeHandlerFactory.h"
 #include "include/cef_app.h"
-#include "include/cef_render_handler.h"
+#include "include/cef_scheme.h"
 #include <filesystem>
 #include <random>
 #include <string>
+#include <unistd.h>
 
 // Defined in lwe_bridge.cpp; non-empty when LWE runs embedded in another process.
 extern std::string g_lwe_subprocess_path;
@@ -82,12 +84,37 @@ WebBrowserContext::WebBrowserContext (WallpaperEngine::Application::WallpaperApp
 
     // Configurate Chromium
     CefSettings settings;
-    std::string cache_path = (std::filesystem::temp_directory_path () / uuid::generate_uuid_v4 ()).string ();
+    // Use a per-screen profile so concurrent LWE processes (one per monitor) don't
+    // race for the same CEF SingletonLock and crash.  Shader caches still persist
+    // across restarts for the same screen name.
+    std::string profileSuffix = "default";
+    {
+	const auto& screenBgs = wallpaperApplication.getContext ().settings.general.screenBackgrounds;
+	if (!screenBgs.empty ()) {
+	    profileSuffix = screenBgs.begin ()->first;
+	    for (auto& c : profileSuffix) {
+		if (c == '/' || c == ' ' || c == '\\') c = '_';
+	    }
+	}
+    }
+    std::string cache_path =
+	(std::filesystem::temp_directory_path () / ("lwe-cef-profile-" + profileSuffix)).string ();
     cef_string_utf8_to_utf16 (cache_path.c_str (), cache_path.length (), &settings.root_cache_path);
     settings.windowless_rendering_enabled = true;
-#if defined(CEF_NO_SANDBOX)
-    settings.no_sandbox = true;
-#endif
+    settings.no_sandbox = true; // chrome-sandbox requires setuid root which LWE doesn't ship with
+
+    // Resolve the directory containing linux-wallpaperengine so CEF can find
+    // icudtl.dat, locales/, and other runtime resources.
+    {
+	char exe_buf [4096] {};
+	ssize_t n = ::readlink ("/proc/self/exe", exe_buf, sizeof (exe_buf) - 1);
+	if (n > 0) {
+	    std::string exe_dir = std::filesystem::path (exe_buf).parent_path ().string ();
+	    CefString (&settings.resources_dir_path) = exe_dir;
+	    CefString (&settings.locales_dir_path)   = exe_dir + "/locales";
+	}
+    }
+
     // Point CEF at the minimal subprocess helper so it never re-execs the main
     // binary (which would fail because the main binary needs wallpaper args).
     // Priority: CGo-embedded path > LWE_CEF_SUBPROCESS_PATH env var.
@@ -99,12 +126,28 @@ WebBrowserContext::WebBrowserContext (WallpaperEngine::Application::WallpaperApp
 	}
     }
 
+    // Remove stale singleton locks left by a previously killed process.
+    // CEF writes SingletonLock (symlink hostname:pid) and related files; if the
+    // process was SIGKILLed they are never cleaned up and CefInitialize fails.
+    for (const char* name : {"SingletonLock", "SingletonSocket", "SingletonCookie"}) {
+	std::filesystem::remove (std::filesystem::path (cache_path) / name);
+    }
+
     // CEF can only be initialized once per process; skip if already alive.
     if (!s_cef_alive) {
 	if (!CefInitialize (main_args, settings, this->m_browserApplication, nullptr)) {
 	    sLog.exception ("CefInitialize: failed");
 	}
 	s_cef_alive = true;
+    } else {
+	// Hot-swap: CEF is already running.  Re-register scheme handler factories
+	// so the new wallpaper's files are served under the fixed "wp://" scheme.
+	const auto* app = static_cast<CEF::SubprocessApp*> (this->m_browserApplication.get ());
+	for (const auto& [workshopId, factory] : app->getHandlerFactories ()) {
+	    CefRegisterSchemeHandlerFactory (
+		CEF::WPSchemeHandlerFactory::generateSchemeName (workshopId), CefString (), factory
+	    );
+	}
     }
 }
 

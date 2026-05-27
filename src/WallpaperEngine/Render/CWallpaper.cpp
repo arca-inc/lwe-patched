@@ -208,6 +208,7 @@ void CWallpaper::render (const glm::ivec4& viewport, const bool vflip, const glm
 #if !NDEBUG
     glPushDebugGroup (GL_DEBUG_SOURCE_APPLICATION, 0, -1, "Rendering scene");
 #endif /* !NDEBUG */
+    this->tickInput (sceneViewport);
     if (needsSceneRender) {
 	this->renderFrame (sceneViewport);
 	this->m_lastRenderedFrame = currentFrame;

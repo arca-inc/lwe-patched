@@ -36,17 +36,35 @@ void BrowserApp::OnBeforeCommandLineProcessing (const CefString& process_type, C
     command_line->AppendSwitch ("--disable-breakpad");
     command_line->AppendSwitch ("--disable-field-trial-config");
     command_line->AppendSwitch ("--no-experiments");
-    // TODO: ACTIVATE THIS IF WE EVER SUPPORT MACOS OFFICIALLY
-    /*
-if (process_type.empty()) {
-#if defined(OS_MACOSX)
-  // Disable the macOS keychain prompt. Cookies will not be encrypted.
-  command_line->AppendSwitch("use-mock-keychain");
-#endif
-}*/
+    // Use basic (unencrypted) password/cookie storage — avoids blocking keychain prompts.
+    command_line->AppendSwitchWithValue ("--password-store", "basic");
+    command_line->AppendSwitch ("--use-mock-keychain");
+    // --no-sandbox: the namespace sandbox blocks GPU device files (/dev/dri/*,
+    // /dev/nvidia*) and Vulkan ICD paths, causing VK_ERROR_INITIALIZATION_FAILED.
+    // swiftshader: pure-software ANGLE backend, no EGL/display connection needed.
+    // headless ozone: GPU subprocess needs no display connection so navigation starts
+    // immediately without waiting for GPU EGL initialisation (which hangs on Wayland).
+    // disable-gpu-watchdog: SwiftShader's first-run shader compilation can exceed the
+    // default watchdog timeout causing the GPU process to be killed and restarted.
+    command_line->AppendSwitchWithValue ("--use-angle", "swiftshader");
+    command_line->AppendSwitch ("--no-sandbox");
+    command_line->AppendSwitch ("--disable-gpu-watchdog");
+    command_line->AppendSwitchWithValue ("--ozone-platform", "headless");
 }
 
 void BrowserApp::OnBeforeChildProcessLaunch (CefRefPtr<CefCommandLine> command_line) {
+    // Pass the actual computed scheme names so subprocesses (renderer, network
+    // service) can register the same wp<id>:// schemes in OnRegisterCustomSchemes.
+    // ProjectParser may assign counter-based IDs ("-1", "-2"…) that don't match
+    // the directory names that subprocesses would otherwise derive from --bg args.
+    std::string schemeList;
+    for (const auto& [workshopId, factory] : this->getHandlerFactories ()) {
+	if (!schemeList.empty ()) schemeList += ",";
+	schemeList += WPSchemeHandlerFactory::generateSchemeName (workshopId);
+    }
+    if (!schemeList.empty ()) {
+	command_line->AppendSwitchWithValue ("wp-schemes", schemeList);
+    }
     // add back any parameters we had before so the new process can load up everything needed
     for (int i = 1; i < this->getApplication ().getContext ().getArgc (); i++) {
 	command_line->AppendArgument (this->getApplication ().getContext ().getArgv ()[i]);

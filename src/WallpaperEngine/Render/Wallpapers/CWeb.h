@@ -37,6 +37,7 @@ public:
     void setSize (int width, int height);
 
 protected:
+    void tickInput (const glm::ivec4& viewport) override;
     void renderFrame (const glm::ivec4& viewport) override;
     void updateMouse (const glm::ivec4& viewport);
     const Web& getWeb () const { return *this->getWallpaperData ().as<Web> (); }

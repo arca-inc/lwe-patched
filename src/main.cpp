@@ -15,6 +15,7 @@
 #include "WallpaperEngine/Application/ApplicationContext.h"
 #include "WallpaperEngine/Application/WallpaperApplication.h"
 #include "WallpaperEngine/Logging/Log.h"
+#include "lwe_bridge.h"
 
 using App = WallpaperEngine::Application::WallpaperApplication;
 using Ctx = WallpaperEngine::Application::ApplicationContext;
@@ -56,7 +57,7 @@ static void ipc_thread_func (int srv_fd) {
 
         if (cmd == "stop") {
             g_ipc_stop.store (true);
-            (void) write (conn, "OK\n", 3);
+            [[maybe_unused]] ssize_t n = write (conn, "OK\n", 3);
             close (conn);
             if (a) a->signal (SIGTERM);
         } else if (cmd.rfind ("load:", 0) == 0) {
@@ -130,37 +131,48 @@ int main (int argc, char* argv[]) {
             Ctx ctx (static_cast<int> (av.size ()), av.data ());
             ctx.loadSettingsFromArgv ();
 
-            auto* a = new App (ctx);
-            g_app.store (a);
+            bool wallpaperOk = false;
+            try {
+                auto* a = new App (ctx);
+                g_app.store (a);
 
-            if (ctx.settings.general.onlyListProperties) {
+                if (ctx.settings.general.onlyListProperties) {
+                    delete a;
+                    g_app.store (nullptr);
+                    break;
+                }
+
+                std::signal (SIGINT,  signalhandler);
+                std::signal (SIGTERM, signalhandler);
+
+                // Register the fd to write "READY" when the first frame is actually
+                // rendered (from WaylandOpenGLDriver or RenderHandler::OnPaint).
+                // This is more accurate than writing before show() — CEF wallpapers
+                // can take many seconds before their first frame appears.
+                int signal_fd = (ready_fd >= 0) ? ready_fd : reply_fd_for_this_iter;
+                lwe_set_first_frame_fd (signal_fd);
+                ready_fd = -1;
+                reply_fd_for_this_iter = -1;
+
+                a->show ();
+                wallpaperOk = true;
+
+                std::signal (SIGINT,  SIG_DFL);
+                std::signal (SIGTERM, SIG_DFL);
+                g_app.store (nullptr);
                 delete a;
+            } catch (const std::exception& e) {
+                // Bad wallpaper (parse error, missing file, etc.) — log and exit.
+                // Do NOT let the exception propagate: ipc_th is joinable and
+                // destroying it without join calls std::terminate().
+                std::cerr << e.what () << std::endl;
+                std::signal (SIGINT,  SIG_DFL);
+                std::signal (SIGTERM, SIG_DFL);
                 g_app.store (nullptr);
                 break;
             }
 
-            std::signal (SIGINT,  signalhandler);
-            std::signal (SIGTERM, signalhandler);
-
-            // Signal Go that this wallpaper is loaded and rendering is starting.
-            if (ready_fd >= 0) {
-                (void) write (ready_fd, "READY\n", 6);
-                close (ready_fd);
-                ready_fd = -1;
-            } else if (reply_fd_for_this_iter >= 0) {
-                (void) write (reply_fd_for_this_iter, "READY\n", 6);
-                close (reply_fd_for_this_iter);
-                reply_fd_for_this_iter = -1;
-            }
-
-            a->show ();
-
-            std::signal (SIGINT,  SIG_DFL);
-            std::signal (SIGTERM, SIG_DFL);
-            g_app.store (nullptr);
-            delete a;
-
-            if (g_ipc_stop.load ()) break;
+            if (!wallpaperOk || g_ipc_stop.load ()) break;
 
             // Check for pending hot-swap
             std::string next;

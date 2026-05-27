@@ -58,17 +58,28 @@ void CWeb::setSize (const int width, const int height) {
     this->m_browser->GetHost ()->WasResized ();
 }
 
-void CWeb::renderFrame (const glm::ivec4& viewport) {
-    // Pump CEF so OnPaint delivers pixel data and OnAfterCreated can fire.
+void CWeb::tickInput (const glm::ivec4& viewport) {
+    // Pump CEF on every loop iteration — not just when a new frame is due — so
+    // OnAfterCreated fires promptly and mouse events reach the browser at the
+    // full event-loop cadence rather than only at the capped render frame rate.
     CefDoMessageLoopWork ();
 
     // Complete async browser initialisation once OnAfterCreated has fired.
+    if (!this->m_browser && this->m_client->IsCreated ()) {
+        this->m_browser = this->m_client->GetBrowser ();
+        this->m_browser->GetHost ()->WasHidden (false);
+        this->m_browser->GetHost ()->SetFocus (true);
+        this->m_browser->GetHost ()->Invalidate (PET_VIEW);
+    }
+
+    if (this->m_browser) {
+        this->updateMouse (viewport);
+    }
+}
+
+void CWeb::renderFrame (const glm::ivec4& viewport) {
     if (!this->m_browser) {
-        if (this->m_client->IsCreated ()) {
-            this->m_browser = this->m_client->GetBrowser ();
-        } else {
-            return;
-        }
+        return;
     }
 
     // ensure the viewport matches the window size, and resize if needed
@@ -76,8 +87,6 @@ void CWeb::renderFrame (const glm::ivec4& viewport) {
 	this->setSize (viewport.z, viewport.w);
     }
 
-    // ensure the virtual mouse position is up to date
-    this->updateMouse (viewport);
     // use the scene's framebuffer by default
     glBindFramebuffer (GL_FRAMEBUFFER, this->getWallpaperFramebuffer ());
     // ensure we render over the whole framebuffer
@@ -121,8 +130,16 @@ void CWeb::updateMouse (const glm::ivec4& viewport) {
 
 CWeb::~CWeb () {
     if (this->m_browser) {
-        CefDoMessageLoopWork ();
         this->m_browser->GetHost ()->CloseBrowser (true);
+        // Pump the message loop until CEF fires OnBeforeClose; without this,
+        // CEF still holds a reference to the render handler after ~CWeb returns
+        // and calls OnPaint/GetViewRect on the already-freed CWeb pointer.
+        int limit = 200;
+        while (!this->m_client->IsClosed () && --limit > 0) {
+            CefDoMessageLoopWork ();
+            usleep (5000);
+        }
     }
-    delete this->m_renderHandler;
+    // m_renderHandler lifetime is managed by BrowserClient's CefRefPtr —
+    // do NOT delete it explicitly; the refcount will free it after OnBeforeClose.
 }

@@ -16,5 +16,9 @@ CefRefPtr<CefResourceHandler> WPSchemeHandlerFactory::Create (
 }
 
 std::string WPSchemeHandlerFactory::generateSchemeName (const std::string& workshopId) {
-    return std::string (WPENGINE_SCHEME) + workshopId;
+    // Fixed scheme — workshopId no longer embedded so the same "wp://" scheme
+    // name works across hot-swaps; CEF custom schemes can only be registered once
+    // at startup and would otherwise show ERR_UNKNOWN_URL_SCHEME on wallpaper change.
+    (void) workshopId;
+    return std::string (WPENGINE_SCHEME);
 }

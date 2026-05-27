@@ -2,6 +2,7 @@
 #include "VideoFactories.h"
 #include "WallpaperEngine/Application/WallpaperApplication.h"
 #include "WallpaperEngine/Logging/Log.h"
+#include "lwe_bridge.h"
 
 #define class _class
 #define namespace _namespace
@@ -17,6 +18,7 @@ extern "C" {
 #undef static
 
 #include <algorithm>
+#include <poll.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -401,12 +403,27 @@ void WaylandOpenGLDriver::dispatchEventQueue () {
 	for (const auto& viewport : this->getOutput ().getViewports () | std::views::values) {
 	    this->getApp ().update (viewport);
 	}
+	// Signal wepapered that non-CEF rendering has started.
+	// For CEF (web) wallpapers this is a no-op — RenderHandler::OnPaint fires first.
+	lwe_signal_first_frame ();
     }
 
     const float minimumTime = 1.0f / this->m_context.settings.render.maximumFPS;
     const float startTime = this->getRenderTime ();
 
     wl_display_flush (m_waylandContext.display);
+
+    // dispatch_pending never reads from the socket; frame-callback "done" events
+    // would sit unread forever.  Use prepare_read/poll/read_events so compositor
+    // events (especially wl_surface_frame "done") actually reach the queue.
+    if (wl_display_prepare_read (m_waylandContext.display) == 0) {
+        struct pollfd pfd = { wl_display_get_fd (m_waylandContext.display), POLLIN, 0 };
+        if (poll (&pfd, 1, 0) > 0)
+            wl_display_read_events (m_waylandContext.display);
+        else
+            wl_display_cancel_read (m_waylandContext.display);
+    }
+
     if (wl_display_dispatch_pending (m_waylandContext.display) == -1) {
 	m_requestedExit = true;
     }

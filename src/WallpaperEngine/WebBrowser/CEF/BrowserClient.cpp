@@ -10,3 +10,8 @@ void BrowserClient::OnAfterCreated (CefRefPtr<CefBrowser> browser) {
     m_browser = browser;
     m_created.store (true);
 }
+
+void BrowserClient::OnBeforeClose (CefRefPtr<CefBrowser> browser) {
+    m_browser = nullptr;
+    m_closed.store (true);
+}

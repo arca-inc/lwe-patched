@@ -170,6 +170,12 @@ protected:
     virtual void renderFrame (const glm::ivec4& viewport) = 0;
 
     /**
+     * Called every render loop iteration regardless of frame rate; used to process
+     * input events (e.g. mouse) at the full loop cadence, not just on frame renders.
+     */
+    virtual void tickInput (const glm::ivec4& viewport) {}
+
+    /**
      * Setups OpenGL's framebuffers for ping-pong and scene rendering
      */
     void setupFramebuffers ();

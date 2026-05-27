@@ -5,10 +5,6 @@
 #include <atomic>
 
 namespace WallpaperEngine::WebBrowser::CEF {
-// *************************************************************************
-//! \brief Provide access to browser-instance-specific callbacks. A single
-//! CefClient instance can be shared among any number of browsers.
-// *************************************************************************
 class BrowserClient : public CefClient, public CefLifeSpanHandler {
 public:
     explicit BrowserClient (CefRefPtr<CefRenderHandler> ptr);
@@ -17,8 +13,10 @@ public:
     [[nodiscard]] CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler () override { return this; }
 
     void OnAfterCreated (CefRefPtr<CefBrowser> browser) override;
+    void OnBeforeClose (CefRefPtr<CefBrowser> browser) override;
 
     [[nodiscard]] bool IsCreated () const { return m_created.load (); }
+    [[nodiscard]] bool IsClosed () const { return m_closed.load (); }
     [[nodiscard]] CefRefPtr<CefBrowser> GetBrowser () const { return m_browser; }
 
     CefRefPtr<CefRenderHandler> m_renderHandler = nullptr;
@@ -27,6 +25,7 @@ public:
 
 private:
     std::atomic<bool> m_created {false};
+    std::atomic<bool> m_closed {false};
     CefRefPtr<CefBrowser> m_browser;
 };
 } // namespace WallpaperEngine::WebBrowser::CEF

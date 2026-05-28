@@ -85,6 +85,15 @@ AssetLocatorUniquePtr WallpaperApplication::setupAssetLocator (const std::string
 	container->mount (path / "gifscene.pkg", "/");
     } catch (std::runtime_error&) { }
 
+    // Preset overlay: for dependency-based wallpapers the preset directory holds
+    // assets (directories/, files/) referenced by the framework's HTML/JS.
+    // Mount it after the primary bg so it acts as a fallback.
+    if (!this->m_context.settings.general.presetDir.empty ()) {
+        try {
+            container->mount (std::filesystem::path (this->m_context.settings.general.presetDir), "/");
+        } catch (std::runtime_error&) { }
+    }
+
     try {
 	container->mount (this->m_context.settings.general.assets, "/");
     } catch (std::runtime_error&) {

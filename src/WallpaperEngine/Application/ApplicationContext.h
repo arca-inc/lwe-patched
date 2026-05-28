@@ -93,6 +93,8 @@ public:
 	    std::map<std::string, std::filesystem::path> screenBackgrounds;
 	    /** Properties to change values for */
 	    std::map<std::string, std::string> properties;
+	    /** Preset/overlay directory (contains assets referenced by a dependency-based wallpaper) */
+	    std::string presetDir;
 	    /** The scaling mode for different screens */
 	    std::map<std::string, WallpaperEngine::Render::WallpaperState::TextureUVsScaling> screenScalings;
 	    /** The clamping mode for different screens */

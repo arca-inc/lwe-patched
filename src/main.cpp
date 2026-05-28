@@ -20,10 +20,19 @@
 using App = WallpaperEngine::Application::WallpaperApplication;
 using Ctx = WallpaperEngine::Application::ApplicationContext;
 
+#include "External/json/single_include/nlohmann/json.hpp"
+
+struct IpcLoad {
+    std::string bg;
+    std::string presetDir;
+    std::map<std::string, std::string> props;
+    bool valid = false;
+};
+
 static std::atomic<App*> g_app {nullptr};
 static std::atomic<bool> g_ipc_stop {false};
 static std::mutex        g_ipc_mu;
-static std::string       g_ipc_next_bg;   // protected by g_ipc_mu
+static IpcLoad           g_ipc_next_load;  // protected by g_ipc_mu
 static int               g_ipc_reply_fd {-1}; // protected by g_ipc_mu
 
 void signalhandler (const int sig) {
@@ -32,8 +41,9 @@ void signalhandler (const int sig) {
 }
 
 // Background thread: accepts connections on srv_fd, reads one-line commands.
-//   "stop\n"        → graceful shutdown
-//   "load:<path>\n" → hot-swap wallpaper; reply fd held open for READY ack
+//   "stop\n"                 → graceful shutdown
+//   "load:<path>\n"          → hot-swap (legacy protocol, no preset)
+//   JSON {"cmd":"load",...}\n → hot-swap with preset_dir and props
 static void ipc_thread_func (int srv_fd) {
     while (!g_ipc_stop.load ()) {
         fd_set rfds;
@@ -45,7 +55,7 @@ static void ipc_thread_func (int srv_fd) {
         int conn = accept (srv_fd, nullptr, nullptr);
         if (conn < 0) continue;
 
-        char buf [4096] {};
+        char buf [65536] {};
         int n = read (conn, buf, sizeof (buf) - 1);
         if (n <= 0) { close (conn); continue; }
 
@@ -57,16 +67,43 @@ static void ipc_thread_func (int srv_fd) {
 
         if (cmd == "stop") {
             g_ipc_stop.store (true);
-            [[maybe_unused]] ssize_t n = write (conn, "OK\n", 3);
+            [[maybe_unused]] ssize_t wr = write (conn, "OK\n", 3);
             close (conn);
             if (a) a->signal (SIGTERM);
         } else if (cmd.rfind ("load:", 0) == 0) {
+            // Legacy plain-text protocol
             std::lock_guard<std::mutex> lk (g_ipc_mu);
-            // Discard any previous unanswered reply fd
             if (g_ipc_reply_fd >= 0) { close (g_ipc_reply_fd); }
-            g_ipc_next_bg  = cmd.substr (5);
-            g_ipc_reply_fd = conn; // main thread writes READY and closes
+            g_ipc_next_load = { cmd.substr (5), {}, {}, true };
+            g_ipc_reply_fd  = conn;
             if (a) a->signal (SIGTERM);
+        } else if (!cmd.empty () && cmd[0] == '{') {
+            // JSON protocol: {"cmd":"load","bg":"...","preset_dir":"...","props":{...}}
+            try {
+                auto j = nlohmann::json::parse (cmd);
+                if (j.value ("cmd", "") == "load") {
+                    IpcLoad load;
+                    load.bg        = j.value ("bg", "");
+                    load.presetDir = j.value ("preset_dir", "");
+                    load.valid     = true;
+                    if (j.contains ("props") && j["props"].is_object ()) {
+                        for (auto& [k, v] : j["props"].items ()) {
+                            if (v.is_string ())      load.props[k] = v.get<std::string> ();
+                            else if (v.is_number ()) load.props[k] = v.dump ();
+                            else if (v.is_boolean ()) load.props[k] = v.get<bool> () ? "1" : "0";
+                        }
+                    }
+                    std::lock_guard<std::mutex> lk (g_ipc_mu);
+                    if (g_ipc_reply_fd >= 0) { close (g_ipc_reply_fd); }
+                    g_ipc_next_load = std::move (load);
+                    g_ipc_reply_fd  = conn;
+                    if (a) a->signal (SIGTERM);
+                } else {
+                    close (conn);
+                }
+            } catch (const nlohmann::json::exception&) {
+                close (conn);
+            }
         } else {
             close (conn);
         }
@@ -175,22 +212,46 @@ int main (int argc, char* argv[]) {
             if (!wallpaperOk || g_ipc_stop.load ()) break;
 
             // Check for pending hot-swap
-            std::string next;
+            IpcLoad nextLoad;
             int rep_fd = -1;
             {
                 std::lock_guard<std::mutex> lk (g_ipc_mu);
-                next   = std::move (g_ipc_next_bg);
-                rep_fd = g_ipc_reply_fd;
+                nextLoad       = std::move (g_ipc_next_load);
+                rep_fd         = g_ipc_reply_fd;
                 g_ipc_reply_fd = -1;
+                g_ipc_next_load = {};
             }
 
             // Natural exit with no pending command → leave the loop
-            if (next.empty ()) break;
+            if (!nextLoad.valid || nextLoad.bg.empty ()) break;
 
-            // Hot-swap: patch --bg argument for next iteration
+            // Hot-swap: patch --bg for next iteration
             for (std::size_t i = 1; i + 1 < args.size (); i++) {
-                if (args [i] == "--bg") { args [i + 1] = next; break; }
+                if (args [i] == "--bg") { args [i + 1] = nextLoad.bg; break; }
             }
+
+            // Strip stale --preset-dir and --set-property entries, then add new ones
+            {
+                std::vector<std::string> cleaned;
+                cleaned.push_back (args [0]);
+                for (std::size_t i = 1; i < args.size (); i++) {
+                    if (args[i] == "--preset-dir" && i + 1 < args.size ()) { i++; continue; }
+                    if ((args[i] == "--set-property" || args[i] == "--property") && i + 1 < args.size ()) {
+                        i++; continue;
+                    }
+                    cleaned.push_back (args[i]);
+                }
+                args = std::move (cleaned);
+            }
+            if (!nextLoad.presetDir.empty ()) {
+                args.push_back ("--preset-dir");
+                args.push_back (nextLoad.presetDir);
+            }
+            for (const auto& [k, v] : nextLoad.props) {
+                args.push_back ("--set-property");
+                args.push_back (k + "=" + v);
+            }
+
             reply_fd_for_this_iter = rep_fd;
         }
 

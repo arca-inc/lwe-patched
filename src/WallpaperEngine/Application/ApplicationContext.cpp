@@ -575,6 +575,10 @@ void ApplicationContext::loadSettingsFromArgv () {
 	.flag ()
 	.action ([this] (const std::string& value) -> void { this->settings.mouse.disableparallax = true; });
 
+    configurationGroup.add_argument ("--preset-dir")
+	.help ("Overlay directory for preset wallpapers (fallback file lookup for dependency-based wallpapers)")
+	.action ([this] (const std::string& value) -> void { this->settings.general.presetDir = value; });
+
     configurationGroup.add_argument ("-l", "--list-properties")
 	.help ("List all the available properties and their configuration")
 	.flag ()

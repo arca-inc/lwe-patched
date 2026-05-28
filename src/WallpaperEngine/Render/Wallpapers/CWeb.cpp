@@ -30,6 +30,8 @@ CWeb::CWeb (
     browserSettings.windowless_frame_rate = std::max (60, context.getApp ().getContext ().settings.render.maximumFPS);
 
     this->m_client = new WebBrowser::CEF::BrowserClient (m_renderHandler);
+    // Pass property overrides so OnLoadEnd can call wallpaperPropertyListener.applyUserProperties
+    this->m_client->setProperties (context.getApp ().getContext ().settings.general.properties);
     // use the custom scheme for the wallpaper's files
     const std::string htmlURL = WPSchemeHandlerFactory::generateSchemeName (this->getWeb ().project.workshopId)
 	+ "://root/" + this->getWeb ().filename;

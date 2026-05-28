@@ -2,22 +2,32 @@
 
 #include "include/cef_client.h"
 #include "include/cef_life_span_handler.h"
+#include "include/cef_load_handler.h"
 #include <atomic>
+#include <map>
+#include <string>
 
 namespace WallpaperEngine::WebBrowser::CEF {
-class BrowserClient : public CefClient, public CefLifeSpanHandler {
+class BrowserClient : public CefClient, public CefLifeSpanHandler, public CefLoadHandler {
 public:
     explicit BrowserClient (CefRefPtr<CefRenderHandler> ptr);
 
     [[nodiscard]] CefRefPtr<CefRenderHandler> GetRenderHandler () override;
     [[nodiscard]] CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler () override { return this; }
+    [[nodiscard]] CefRefPtr<CefLoadHandler>     GetLoadHandler ()     override { return this; }
 
     void OnAfterCreated (CefRefPtr<CefBrowser> browser) override;
     void OnBeforeClose (CefRefPtr<CefBrowser> browser) override;
 
+    // CefLoadHandler: inject properties after page load
+    void OnLoadEnd (CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, int httpStatusCode) override;
+
     [[nodiscard]] bool IsCreated () const { return m_created.load (); }
     [[nodiscard]] bool IsClosed () const { return m_closed.load (); }
     [[nodiscard]] CefRefPtr<CefBrowser> GetBrowser () const { return m_browser; }
+
+    // Properties to inject via wallpaperPropertyListener.applyUserProperties on load
+    void setProperties (const std::map<std::string, std::string>& props) { m_properties = props; }
 
     CefRefPtr<CefRenderHandler> m_renderHandler = nullptr;
 
@@ -27,5 +37,6 @@ private:
     std::atomic<bool> m_created {false};
     std::atomic<bool> m_closed {false};
     CefRefPtr<CefBrowser> m_browser;
+    std::map<std::string, std::string> m_properties;
 };
 } // namespace WallpaperEngine::WebBrowser::CEF

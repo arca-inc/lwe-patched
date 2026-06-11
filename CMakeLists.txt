@@ -493,7 +493,10 @@ set(COMMON_SOURCES
     src/WallpaperEngine/Data/Model/ScriptedDynamicValue.cpp
 
     src/lwe_bridge.h
-    src/lwe_bridge.cpp)
+    src/lwe_bridge.cpp
+    
+    src/ui_window.h
+    src/ui_window.cpp)
 
 if(BUILD_TESTING)
     add_executable(

@@ -19,6 +19,13 @@ public:
         );
     }
 
+    void OnBeforeCommandLineProcessing(const CefString& process_type, CefRefPtr<CefCommandLine> command_line) override {
+        command_line->AppendSwitch("disable-gpu");
+        command_line->AppendSwitch("disable-gpu-compositing");
+        command_line->AppendSwitch("disable-software-rasterizer");
+        command_line->AppendSwitchWithValue("ozone-platform-hint", "auto");
+    }
+
 private:
     IMPLEMENT_REFCOUNTING (SubprocessSchemeApp);
     DISALLOW_COPY_AND_ASSIGN (SubprocessSchemeApp);

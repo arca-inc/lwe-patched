@@ -16,6 +16,7 @@
 #include "WallpaperEngine/Application/WallpaperApplication.h"
 #include "WallpaperEngine/Logging/Log.h"
 #include "lwe_bridge.h"
+#include "ui_window.h"
 
 using App = WallpaperEngine::Application::WallpaperApplication;
 using Ctx = WallpaperEngine::Application::ApplicationContext;
@@ -121,14 +122,22 @@ int main (int argc, char* argv[]) {
         // When browser_subprocess_path is set to lwe-cef-subprocess this should
         // never trigger, but keep it as a safety net.
         bool enableLogging = true;
+        bool isUiWindow = false;
+        bool isSubprocess = false;
         for (int i = 1; i < argc; i++) {
-            if (strncmp ("--type=zygote",  argv [i], 13) == 0 ||
-                strncmp ("--type=utility", argv [i], 14) == 0) {
+            if (strncmp ("--type=", argv[i], 7) == 0) {
                 enableLogging = false;
-                break;
+                isSubprocess = true;
+            }
+            if (strncmp ("--ui-window", argv[i], 11) == 0) {
+                isUiWindow = true;
             }
         }
         if (enableLogging) initLogging ();
+
+        if (isUiWindow || isSubprocess) {
+            return run_ui_window(argc, argv);
+        }
 
         // IPC configuration from environment
         const char* ctrl_sock_path = std::getenv ("WEPAPERED_CTRL_SOCK");

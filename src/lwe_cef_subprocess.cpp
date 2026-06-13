@@ -5,6 +5,8 @@
 #include "include/cef_app.h"
 #include "include/cef_scheme.h"
 #include "WallpaperEngine/WebBrowser/WebBrowserContext.h"
+#include <cstdlib>
+#include <string>
 
 class SubprocessSchemeApp : public CefApp {
 public:
@@ -20,9 +22,18 @@ public:
     }
 
     void OnBeforeCommandLineProcessing(const CefString& process_type, CefRefPtr<CefCommandLine> command_line) override {
-        command_line->AppendSwitch("disable-gpu");
-        command_line->AppendSwitch("disable-gpu-compositing");
-        command_line->AppendSwitch("disable-software-rasterizer");
+        // Mirror BrowserApp's gating: CEF launches the gpu-process/renderer through
+        // this helper, so disabling the GPU here would override the parent's request
+        // for hardware. Keep GPU disabled (software SwiftShader) by default, but when
+        // LWE_WEB_ANGLE selects a hardware backend leave it enabled. The env var is
+        // inherited from the process that spawned this subprocess.
+        const char* angle = std::getenv("LWE_WEB_ANGLE");
+        const bool softwareGL = !(angle && angle[0]) || std::string(angle) == "swiftshader";
+        if (softwareGL) {
+            command_line->AppendSwitch("disable-gpu");
+            command_line->AppendSwitch("disable-gpu-compositing");
+            command_line->AppendSwitch("disable-software-rasterizer");
+        }
         command_line->AppendSwitchWithValue("ozone-platform-hint", "auto");
     }
 

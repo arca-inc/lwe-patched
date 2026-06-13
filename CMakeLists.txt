@@ -43,9 +43,27 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(KISSFFT_TEST OFF)
 set(KISSFFT_TOOLS OFF)
 
-# Download CEF of specified version for current platform
-# Specify the CEF distribution version.
-set(CEF_VERSION "135.0.17+gcbc1c5b+chromium-135.0.7049.52")
+# Download CEF of specified version for current platform.
+#
+# Two CEF releases are supported, selectable with -DCEF_RELEASE=:
+#   135 (default) — CEF's standalone Alloy runtime, which renders the windowless
+#                   off-screen web wallpapers cleanly.
+#   148           — newer Chromium, but Chrome-runtime-only: windowless OSR
+#                   currently hits one-process-per-profile singleton conflicts
+#                   and a fatal empty-rect NOTREACHED, so it is opt-in.
+# Pin any other exact build with -DCEF_VERSION="<full version string>".
+set(CEF_RELEASE "135" CACHE STRING "CEF release: 135 (stable, Alloy runtime) or 148 (latest, Chrome runtime)")
+set_property(CACHE CEF_RELEASE PROPERTY STRINGS "135" "148")
+if(CEF_RELEASE STREQUAL "148")
+    set(_cef_version_default "148.0.10+g7ee53f5+chromium-148.0.7778.218")
+else()
+    set(_cef_version_default "135.0.17+gcbc1c5b+chromium-135.0.7049.52")
+endif()
+# An explicit -DCEF_VERSION overrides the release selection; otherwise follow it.
+if(NOT CEF_VERSION)
+    set(CEF_VERSION "${_cef_version_default}")
+endif()
+message(STATUS "CEF release ${CEF_RELEASE} -> version ${CEF_VERSION}")
 # CEF_DISTRIBUTION_TYPE default value should be different based on the type of build
 # debug builds should use standard versions
 # while release version can do with the minimal version

@@ -1,7 +1,22 @@
 #include "BrowserClient.h"
+#include "WallpaperEngine/Logging/Log.h"
 #include <sstream>
+#include <string>
 
 using namespace WallpaperEngine::WebBrowser::CEF;
+
+bool BrowserClient::OnConsoleMessage (
+    CefRefPtr<CefBrowser> /*browser*/, cef_log_severity_t level, const CefString& message,
+    const CefString& source, int line
+) {
+    const std::string msg = message.ToString ();
+    // Surface our own [LWE] probe lines always; surface page errors too, but stay
+    // quiet for ordinary wallpaper console spam.
+    if (msg.rfind ("[LWE]", 0) == 0 || level >= LOGSEVERITY_ERROR) {
+        sLog.out ("[cef-console] " + msg + " (" + source.ToString () + ":" + std::to_string (line) + ")");
+    }
+    return false; // let CEF apply its default handling as well
+}
 
 BrowserClient::BrowserClient (CefRefPtr<CefRenderHandler> ptr) : m_renderHandler (std::move (ptr)) { }
 
@@ -31,7 +46,26 @@ static std::string escapeJsString (const std::string& s) {
 }
 
 void BrowserClient::OnLoadEnd (CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, int /*httpStatusCode*/) {
-    if (!frame->IsMain () || m_properties.empty ()) return;
+    if (!frame->IsMain ()) return;
+
+    // Probe which WebGL backend the page actually received: "SwiftShader" means
+    // software (CPU) rendering, a Mesa/AMD/Intel/NVIDIA string means hardware.
+    // The result is logged via OnConsoleMessage — the key signal when A/B testing
+    // LWE_WEB_ANGLE=swiftshader vs gl-egl/vulkan.
+    frame->ExecuteJavaScript (
+        "(function(){try{"
+        "var c=document.createElement('canvas');"
+        "var gl=c.getContext('webgl2')||c.getContext('webgl');"
+        "if(!gl){console.log('[LWE][webgl] context=NONE');return;}"
+        "var d=gl.getExtension('WEBGL_debug_renderer_info');"
+        "console.log('[LWE][webgl] renderer='+(d?gl.getParameter(d.UNMASKED_RENDERER_WEBGL):'?')"
+        "+' | vendor='+(d?gl.getParameter(d.UNMASKED_VENDOR_WEBGL):'?')"
+        "+' | '+gl.getParameter(gl.VERSION));"
+        "}catch(e){console.log('[LWE][webgl] probe-error '+e);}})();",
+        frame->GetURL (), 0
+    );
+
+    if (m_properties.empty ()) return;
 
     // Build wallpaperPropertyListener.applyUserProperties({key:{value:"val"},...})
     std::ostringstream js;

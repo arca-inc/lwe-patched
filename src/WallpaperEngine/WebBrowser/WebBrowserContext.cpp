@@ -132,6 +132,26 @@ WebBrowserContext::WebBrowserContext (WallpaperEngine::Application::WallpaperApp
     for (const char* name : {"SingletonLock", "SingletonSocket", "SingletonCookie"}) {
 	std::filesystem::remove (std::filesystem::path (cache_path) / name);
     }
+    // Also clear stale leveldb/UKM "LOCK" files nested in the profile. A
+    // SIGKILLed (or crash-retried) process leaves these held; on the next start
+    // CEF spams "database is locked" and fails to open its stores, which can
+    // cascade into a failed CefInitialize. The per-screen profile is single-owner
+    // (one LWE process per screen), so on startup any LOCK here is stale and safe
+    // to remove — same assumption as the SingletonLock cleanup above.
+    {
+	std::error_code ec;
+	auto begin = std::filesystem::recursive_directory_iterator (
+	    cache_path, std::filesystem::directory_options::skip_permission_denied, ec);
+	if (!ec) {
+	    for (auto it = begin; it != std::filesystem::recursive_directory_iterator (); it.increment (ec)) {
+		if (ec) break;
+		if (it->path ().filename () == "LOCK") {
+		    std::error_code rmEc;
+		    std::filesystem::remove (it->path (), rmEc);
+		}
+	    }
+	}
+    }
 
     // CEF can only be initialized once per process; skip if already alive.
     if (!s_cef_alive) {

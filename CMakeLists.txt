@@ -641,6 +641,23 @@ COPY_FILES(linux-wallpaperengine-lib "${CEF_BINARY_FILES}" "${CEF_BINARY_DIR}" "
 COPY_FILES(linux-wallpaperengine-lib "${CEF_RESOURCE_FILES}" "${CEF_RESOURCE_DIR}" "${TARGET_OUTPUT_DIRECTORY}")
 # remove the vulkan lib as chromium includes a broken libvulkan.so.1 with it
 file(REMOVE "${CEF_BINARY_DIR}/libvulkan.so.1")
+
+# In Release builds the prebuilt CEF distribution ships an unstripped libcef.so
+# (~1.4 GB of debug symbols) and ~44 MB of per-locale .pak files we never use.
+# Strip the big binaries and trim locales to en-US after they're copied, so the
+# packaged output dir stays ~280 MB instead of 1.5 GB. Debug builds keep symbols.
+if(CMAKE_BUILD_TYPE STREQUAL "Release" AND CMAKE_STRIP)
+    add_custom_command(TARGET linux-wallpaperengine-lib POST_BUILD
+        COMMENT "Stripping CEF/LWE binaries and trimming locales (Release)"
+        WORKING_DIRECTORY ${TARGET_OUTPUT_DIRECTORY}
+        COMMAND ${CMAKE_COMMAND} -E echo "  stripping libcef.so, libGLESv2.so, libvk_swiftshader.so"
+        COMMAND ${CMAKE_STRIP} --strip-unneeded libcef.so libGLESv2.so libvk_swiftshader.so || true
+        COMMAND ${CMAKE_COMMAND} -E echo "  trimming locales/ to en-US.pak"
+        COMMAND ${CMAKE_COMMAND}
+            -DLOCALES_DIR=${TARGET_OUTPUT_DIRECTORY}/locales
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/TrimLocales.cmake
+        VERBATIM)
+endif()
 set_target_properties(linux-wallpaperengine-lib PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY ${TARGET_OUTPUT_DIRECTORY})
 

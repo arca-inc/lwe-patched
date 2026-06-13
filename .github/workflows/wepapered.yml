@@ -58,6 +58,18 @@ jobs:
           ls -lh ${{ github.workspace }}/build/output/libcef.so
           ls ${{ github.workspace }}/build/output/locales
 
+      - name: Stage runtime libs into output
+        run: |
+          cd ${{ github.workspace }}/build
+          # liblinux-wallpaperengine-lib.so needs libkissfft at load (and link) time,
+          # but kissfft is built into build/lib, not output. Colocate it under its
+          # soname so the bundle is complete and the wepapered daemon can link it.
+          kiss=$(ls lib/libkissfft-float.so.131.* 2>/dev/null | head -1)
+          if [ -n "$kiss" ]; then cp "$kiss" output/libkissfft-float.so.131; fi
+          # Drop build-only tools the runtime never uses, to slim the release.
+          rm -f output/glslang output/spirv-cross output/run-test262 \
+                output/qjs output/qjsc output/api-test output/function_source
+
       - name: Package output
         run: tar -czf lwe-output-linux-amd64.tar.gz -C ${{ github.workspace }}/build output
 

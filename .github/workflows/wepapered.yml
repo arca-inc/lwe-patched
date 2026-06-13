@@ -1,14 +1,20 @@
 name: wepapered build
 
 # Build the patched LWE library + helper binaries the way wepapered consumes
-# them (single Release build, CEF auto-downloaded by CMake). The upstream
-# cmake.yml only triggers on `main`; this fork lives on `wepapered`.
+# them (single Release build, CEF auto-downloaded by CMake) and publish the
+# output/ dir as a release: a rolling "latest" prerelease on every push, and a
+# versioned release on a v* tag. The upstream cmake.yml only triggers on `main`;
+# this fork lives on `wepapered`.
 on:
   push:
     branches: [ wepapered, master ]
+    tags: [ 'v*' ]
   pull_request:
     branches: [ wepapered, master ]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -52,8 +58,35 @@ jobs:
           ls -lh ${{ github.workspace }}/build/output/libcef.so
           ls ${{ github.workspace }}/build/output/locales
 
+      - name: Package output
+        run: tar -czf lwe-output-linux-amd64.tar.gz -C ${{ github.workspace }}/build output
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: lwe-output-linux-amd64
-          path: build/output/
+          path: lwe-output-linux-amd64.tar.gz
+
+      # Rolling "latest" prerelease on every branch push. Delete the old one
+      # first (with its tag) so "latest" always points at this commit.
+      - name: Refresh rolling latest release
+        if: github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release delete latest -R ${{ github.repository }} --yes --cleanup-tag || true
+
+      - name: Publish latest (rolling)
+        if: github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest build
+          prerelease: true
+          files: lwe-output-linux-amd64.tar.gz
+
+      # Versioned release on a v* tag.
+      - name: Publish versioned release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: lwe-output-linux-amd64.tar.gz

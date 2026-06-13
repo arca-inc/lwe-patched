@@ -1,0 +1,59 @@
+name: wepapered build
+
+# Build the patched LWE library + helper binaries the way wepapered consumes
+# them (single Release build, CEF auto-downloaded by CMake). The upstream
+# cmake.yml only triggers on `main`; this fork lives on `wepapered`.
+on:
+  push:
+    branches: [ wepapered, master ]
+  pull_request:
+    branches: [ wepapered, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    env:
+      BUILD_TYPE: Release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: wepapered-build-ubuntu-24.04
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install \
+            wayland-scanner++ wayland-protocols libwayland-dev libwayland-egl-backend-dev \
+            libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxxf86vm-dev \
+            libgl-dev libglew-dev freeglut3-dev libglfw3-dev libglm-dev \
+            libsdl2-dev liblz4-dev libfftw3-dev libfreetype-dev \
+            libavcodec-dev libavformat-dev libavutil-dev libswscale-dev \
+            libmpv-dev mpv libmpv2 libpulse-dev libpulse0
+
+      - name: Configure CMake
+        run: >
+          cmake -B ${{ github.workspace }}/build
+          -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+          -D CMAKE_C_COMPILER_LAUNCHER=ccache
+          -D CMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      - name: Build
+        run: cmake --build ${{ github.workspace }}/build --config ${{ env.BUILD_TYPE }}
+
+      - name: Show output size (verifies auto strip/trim)
+        run: |
+          du -sh ${{ github.workspace }}/build/output
+          ls -lh ${{ github.workspace }}/build/output/libcef.so
+          ls ${{ github.workspace }}/build/output/locales
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: lwe-output-linux-amd64
+          path: build/output/

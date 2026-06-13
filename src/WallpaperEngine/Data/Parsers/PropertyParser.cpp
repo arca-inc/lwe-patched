@@ -4,6 +4,35 @@
 using namespace WallpaperEngine::Data::Parsers;
 using namespace WallpaperEngine::Data::Model;
 
+namespace {
+// Wallpaper Engine's own data is loosely typed: bool/slider properties sometimes
+// store their value as a string (e.g. "value": "true", "value": "150"). nlohmann
+// throws type_error.302 on an implicit string->bool/float conversion, which
+// aborts the whole wallpaper. Coerce by the actual JSON type instead.
+bool coerceBool (const JSON& node) {
+    if (node.is_boolean ()) return node.get<bool> ();
+    if (node.is_number ()) return node.get<double> () != 0.0;
+    if (node.is_string ()) {
+        const auto s = node.get<std::string> ();
+        return s == "true" || s == "1";
+    }
+    return false;
+}
+
+float coerceFloat (const JSON& node) {
+    if (node.is_number ()) return static_cast<float> (node.get<double> ());
+    if (node.is_boolean ()) return node.get<bool> () ? 1.0f : 0.0f;
+    if (node.is_string ()) {
+        try {
+            return std::stof (node.get<std::string> ());
+        } catch (...) {
+            return 0.0f;
+        }
+    }
+    return 0.0f;
+}
+} // namespace
+
 PropertySharedPtr PropertyParser::parse (const JSON& it, const std::string& name) {
     // type might not be included, in which case means the same as a group
     const auto type = it.optional ("type");
@@ -90,12 +119,16 @@ PropertySharedPtr PropertyParser::parseColor (const JSON& it, const std::string&
 }
 
 PropertySharedPtr PropertyParser::parseBoolean (const JSON& it, const std::string& name) {
+    bool value = false;
+    if (const auto node = it.optional ("value")) {
+	value = coerceBool (*node);
+    }
     return std::make_shared<PropertyBoolean> (
 	PropertyData {
 	    .name = name,
 	    .text = it.optional<std::string> ("text", ""),
 	},
-	it.optional ("value", false)
+	value
     );
 }
 
@@ -110,7 +143,7 @@ PropertySharedPtr PropertyParser::parseSlider (const JSON& it, const std::string
 	    .max = it.optional ("max", 0.0f),
 	    .step = it.optional ("step", 0.0f),
 	},
-	it.require ("value", "Property must have a value")
+	coerceFloat (it.require ("value", "Property must have a value"))
     );
 }
 

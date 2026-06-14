@@ -1,6 +1,9 @@
 #include "PulseAudioPlaybackRecorder.h"
 #include "WallpaperEngine/Logging/Log.h"
+#include <algorithm>
+#include <cctype>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <glm/common.hpp>
 
@@ -95,49 +98,174 @@ void pa_stream_read_cb (pa_stream* stream, const size_t /*nbytes*/, void* userda
     }
 }
 
-void pa_server_info_cb (pa_context* ctx, const pa_server_info* info, void* userdata) {
-    if (info == nullptr) {
+// (Re)bind the capture stream to monitor source `monitor`, optionally filtered to a
+// single application via its sink-input index (sinkInputIdx >= 0). Idempotent: a no-op
+// when already bound to the same target, so it is safe to call from frequent PulseAudio
+// subscribe events without churning the stream. An empty `monitor` goes silent.
+void applyCapture (
+    pa_context* ctx, PulseAudioPlaybackRecorder::PulseAudioData* rec, const std::string& monitor, int sinkInputIdx
+) {
+    if (monitor == rec->currentMonitor && sinkInputIdx == rec->currentSinkInput) {
 	return;
     }
 
-    auto* recorder = static_cast<PulseAudioPlaybackRecorder::PulseAudioData*> (userdata);
+    if (rec->captureStream) {
+	pa_stream_set_read_callback (rec->captureStream, nullptr, nullptr);
+	pa_stream_disconnect (rec->captureStream);
+	pa_stream_unref (rec->captureStream);
+	rec->captureStream = nullptr;
+    }
+    rec->currentMonitor = monitor;
+    rec->currentSinkInput = sinkInputIdx;
+
+    if (monitor.empty ()) {
+	sLog.out ("Audio capture: no matching source yet (silent until it appears)");
+	return;
+    }
 
     pa_sample_spec spec;
     spec.format = PA_SAMPLE_U8;
     spec.rate = 44100;
     spec.channels = 1;
 
-    if (recorder->captureStream) {
-	pa_stream_unref (recorder->captureStream);
+    rec->captureStream = pa_stream_new (ctx, "output monitor", &spec, nullptr);
+    pa_stream_set_state_callback (rec->captureStream, &pa_stream_notify_cb, rec);
+    pa_stream_set_read_callback (rec->captureStream, &pa_stream_read_cb, rec);
+    // Filter the monitor to a single application's playback stream. Must be set before
+    // connecting. The monitor must be the monitor of the sink that sink-input plays on.
+    if (sinkInputIdx >= 0) {
+	pa_stream_set_monitor_stream (rec->captureStream, static_cast<uint32_t> (sinkInputIdx));
     }
 
-    recorder->captureStream = pa_stream_new (ctx, "output monitor", &spec, nullptr);
-
-    pa_stream_set_state_callback (recorder->captureStream, &pa_stream_notify_cb, userdata);
-    pa_stream_set_read_callback (recorder->captureStream, &pa_stream_read_cb, userdata);
-
-    std::string monitor_name (info->default_sink_name);
-    monitor_name += ".monitor";
-
-    // setup latency
     pa_buffer_attr attr {};
-
-    // 10 = latency msecs, 750 = max msecs to store
     size_t bytesPerSec = pa_bytes_per_second (&spec);
-    attr.fragsize = bytesPerSec * 10 / 100;
-    attr.maxlength = attr.fragsize + bytesPerSec * 750 / 100;
+    attr.fragsize = bytesPerSec * 10 / 100;             // ~10 ms latency
+    attr.maxlength = attr.fragsize + bytesPerSec * 750 / 100; // ~750 ms max buffered
 
-    if (pa_stream_connect_record (recorder->captureStream, monitor_name.c_str (), &attr, PA_STREAM_ADJUST_LATENCY)
-	!= 0) {
-	sLog.error ("Failed to connect to input for recording");
+    if (pa_stream_connect_record (rec->captureStream, monitor.c_str (), &attr, PA_STREAM_ADJUST_LATENCY) != 0) {
+	sLog.error ("Failed to connect audio capture to ", monitor);
+    } else {
+	sLog.out ("Audio capture source: ", monitor, sinkInputIdx >= 0 ? " (application stream)" : "");
     }
 }
 
-void pa_context_subscribe_cb (pa_context* ctx, pa_subscription_event_type_t t, uint32_t idx, void* userdata) {
-    // sink changes mean re-take the stream
-    pa_operation* o = pa_context_get_server_info (ctx, &pa_server_info_cb, userdata);
-    if (o) {
-	pa_operation_unref (o);
+// Default-output mode: capture the monitor of the current default sink.
+void pa_server_info_cb (pa_context* ctx, const pa_server_info* info, void* userdata) {
+    if (info == nullptr) {
+	return;
+    }
+    auto* rec = static_cast<PulseAudioPlaybackRecorder::PulseAudioData*> (userdata);
+    if (info->default_sink_name != nullptr && info->default_sink_name[0] != '\0') {
+	applyCapture (ctx, rec, std::string (info->default_sink_name) + ".monitor", -1);
+    } else {
+	sLog.error ("PulseAudio reported no default sink; cannot pick an audio capture source");
+    }
+}
+
+// Transient state for the two-step app resolution (sink-input list -> its sink's monitor).
+struct AppCapture {
+    PulseAudioPlaybackRecorder::PulseAudioData* rec;
+    std::string app;
+    bool found = false;
+    uint32_t sinkInputIdx = 0;
+    uint32_t sinkIdx = 0;
+};
+
+bool icontains (const std::string& haystack, const std::string& needle) {
+    if (needle.empty ()) {
+	return false;
+    }
+    const auto it = std::search (
+	haystack.begin (), haystack.end (), needle.begin (), needle.end (),
+	[] (char a, char b) { return std::tolower ((unsigned char) a) == std::tolower ((unsigned char) b); }
+    );
+    return it != haystack.end ();
+}
+
+// Step 2: we have the app's sink-input + its sink; bind to that sink's monitor, filtered.
+void app_sink_info_cb (pa_context* ctx, const pa_sink_info* i, int eol, void* userdata) {
+    auto* ac = static_cast<AppCapture*> (userdata);
+    if (eol > 0) {
+	delete ac;
+	return;
+    }
+    if (i == nullptr) {
+	return;
+    }
+    const std::string monitor
+	= (i->monitor_source_name != nullptr) ? i->monitor_source_name : std::string (i->name) + ".monitor";
+    applyCapture (ctx, ac->rec, monitor, static_cast<int> (ac->sinkInputIdx));
+}
+
+// Step 1: scan playback streams for one whose app name/binary matches the target.
+void app_sink_input_cb (pa_context* ctx, const pa_sink_input_info* i, int eol, void* userdata) {
+    auto* ac = static_cast<AppCapture*> (userdata);
+    if (eol > 0) {
+	if (ac->found) {
+	    pa_operation* o = pa_context_get_sink_info_by_index (ctx, ac->sinkIdx, app_sink_info_cb, ac);
+	    if (o != nullptr) {
+		pa_operation_unref (o);
+		return; // ac ownership passed to app_sink_info_cb
+	    }
+	}
+	// Not playing right now (or the query failed): go silent and wait for it to appear.
+	applyCapture (ctx, ac->rec, "", -1);
+	delete ac;
+	return;
+    }
+    if (i == nullptr || ac->found) {
+	return;
+    }
+    const char* appName = pa_proplist_gets (i->proplist, PA_PROP_APPLICATION_NAME);
+    const char* binary = pa_proplist_gets (i->proplist, PA_PROP_APPLICATION_PROCESS_BINARY);
+    const std::string haystack = std::string (appName != nullptr ? appName : "") + "\n"
+	+ std::string (binary != nullptr ? binary : "") + "\n" + std::string (i->name != nullptr ? i->name : "");
+    if (icontains (haystack, ac->app)) {
+	ac->found = true;
+	ac->sinkInputIdx = i->index;
+	ac->sinkIdx = i->sink;
+    }
+}
+
+// Resolve the capture target and (re)bind. Dispatches on rec->target:
+//   ""            -> default output sink monitor (follows default changes)
+//   "app:<name>"  -> only that application's stream (follows it starting/stopping)
+//   <source name> -> that monitor source verbatim
+void reconnectCapture (pa_context* ctx, PulseAudioPlaybackRecorder::PulseAudioData* rec) {
+    const std::string& t = rec->target;
+    if (t.rfind ("app:", 0) == 0) {
+	auto* ac = new AppCapture { .rec = rec, .app = t.substr (4) };
+	pa_operation* o = pa_context_get_sink_input_info_list (ctx, app_sink_input_cb, ac);
+	if (o != nullptr) {
+	    pa_operation_unref (o);
+	} else {
+	    delete ac;
+	}
+    } else if (!t.empty ()) {
+	applyCapture (ctx, rec, t, -1);
+    } else {
+	pa_operation* o = pa_context_get_server_info (ctx, pa_server_info_cb, rec);
+	if (o != nullptr) {
+	    pa_operation_unref (o);
+	}
+    }
+}
+
+void pa_context_subscribe_cb (pa_context* ctx, pa_subscription_event_type_t t, uint32_t /*idx*/, void* userdata) {
+    auto* rec = static_cast<PulseAudioPlaybackRecorder::PulseAudioData*> (userdata);
+    const unsigned facility = t & PA_SUBSCRIPTION_EVENT_FACILITY_MASK;
+    const unsigned type = t & PA_SUBSCRIPTION_EVENT_TYPE_MASK;
+    const bool appMode = rec->target.rfind ("app:", 0) == 0;
+
+    // Only re-resolve on events that can change our chosen source. applyCapture is
+    // idempotent, so a default/sink event that resolves to the same monitor is a no-op.
+    bool relevant = facility == PA_SUBSCRIPTION_EVENT_SERVER || facility == PA_SUBSCRIPTION_EVENT_SINK;
+    if (appMode && facility == PA_SUBSCRIPTION_EVENT_SINK_INPUT
+	&& (type == PA_SUBSCRIPTION_EVENT_NEW || type == PA_SUBSCRIPTION_EVENT_REMOVE)) {
+	relevant = true; // the target app started or stopped playing
+    }
+    if (relevant) {
+	reconnectCapture (ctx, rec);
     }
 }
 
@@ -145,25 +273,23 @@ void pa_context_notify_cb (pa_context* ctx, void* userdata) {
     switch (pa_context_get_state (ctx)) {
 	case PA_CONTEXT_READY:
 	    {
-		// set callback
+		auto* rec = static_cast<PulseAudioPlaybackRecorder::PulseAudioData*> (userdata);
 		pa_context_set_subscribe_callback (ctx, pa_context_subscribe_cb, userdata);
-		// set events mask and enable event callback.
+		// SERVER: default-sink changes (a server event, not a sink event). SINK_INPUT:
+		// the target app starting/stopping when capturing a single application.
 		pa_operation* o = pa_context_subscribe (
-		    ctx, static_cast<pa_subscription_mask_t> (PA_SUBSCRIPTION_MASK_SINK | PA_SUBSCRIPTION_MASK_SOURCE),
+		    ctx,
+		    static_cast<pa_subscription_mask_t> (
+			PA_SUBSCRIPTION_MASK_SINK | PA_SUBSCRIPTION_MASK_SOURCE | PA_SUBSCRIPTION_MASK_SERVER
+			| PA_SUBSCRIPTION_MASK_SINK_INPUT
+		    ),
 		    nullptr, nullptr
 		);
-
-		if (o) {
+		if (o != nullptr) {
 		    pa_operation_unref (o);
 		}
 
-		// context being ready means to fetch the sink too
-		pa_operation* o2 = pa_context_get_server_info (ctx, &pa_server_info_cb, userdata);
-
-		if (o2) {
-		    pa_operation_unref (o2);
-		}
-
+		reconnectCapture (ctx, rec);
 		break;
 	    }
 	case PA_CONTEXT_FAILED:
@@ -180,6 +306,11 @@ PulseAudioPlaybackRecorder::PulseAudioPlaybackRecorder () :
 	  .audioBuffer = new uint8_t[WAVE_BUFFER_SIZE],
 	  .audioBufferTmp = new uint8_t[WAVE_BUFFER_SIZE] }
     ) {
+    // Capture target, resolved when the context becomes ready (see reconnectCapture).
+    if (const char* dev = std::getenv ("LWE_AUDIO_DEVICE"); dev != nullptr) {
+	this->m_captureData.target = dev;
+    }
+
     this->m_mainloop = pa_mainloop_new ();
     this->m_mainloopApi = pa_mainloop_get_api (this->m_mainloop);
     this->m_context = pa_context_new (this->m_mainloopApi, "wallpaperengine-audioprocessing");

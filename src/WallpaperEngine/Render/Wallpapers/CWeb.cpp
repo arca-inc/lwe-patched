@@ -4,8 +4,17 @@
 #include "CWeb.h"
 #include "WallpaperEngine/WebBrowser/CEF/WPSchemeHandlerFactory.h"
 
+#include "WallpaperEngine/Audio/AudioContext.h"
+#include "WallpaperEngine/Audio/Drivers/Recorders/PlaybackRecorder.h"
 #include "WallpaperEngine/Data/Model/Project.h"
 #include "WallpaperEngine/Data/Model/Wallpaper.h"
+#include "WallpaperEngine/Media/MediaProvider.h"
+
+#include <chrono>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <future>
 
 using namespace WallpaperEngine::Render;
 using namespace WallpaperEngine::Render::Wallpapers;
@@ -13,12 +22,48 @@ using namespace WallpaperEngine::Render::Wallpapers;
 using namespace WallpaperEngine::WebBrowser;
 using namespace WallpaperEngine::WebBrowser::CEF;
 
+namespace {
+using namespace std::chrono_literals;
+
+// Escape a string for embedding inside a double-quoted JS string literal.
+std::string jsEscape (const std::string& s) {
+    std::string out;
+    out.reserve (s.size () + 8);
+    for (char c : s) {
+        switch (c) {
+            case '"': out += "\\\""; break;
+            case '\\': out += "\\\\"; break;
+            case '\n': out += "\\n"; break;
+            case '\r': out += "\\r"; break;
+            case '\t': out += "\\t"; break;
+            default: out += c;
+        }
+    }
+    return out;
+}
+
+// Run `window.__lweMedia.<method>(<jsonObject>)` in the page, guarding against the
+// document-start bootstrap not being present yet (it could race a navigation).
+void emitMedia (const CefRefPtr<CefFrame>& frame, const char* method, const std::string& jsonObject) {
+    std::string js = "window.__lweMedia&&window.__lweMedia.";
+    js += method;
+    js += "(";
+    js += jsonObject;
+    js += ");";
+    frame->ExecuteJavaScript (js, frame->GetURL (), 0);
+}
+} // namespace
+
 CWeb::CWeb (
     const Wallpaper& wallpaper, RenderContext& context, AudioContext& audioContext, WebBrowserContext& browserContext,
     const WallpaperState::TextureUVsScaling& scalingMode, const uint32_t& clampMode
 ) : CWallpaper (wallpaper, context, audioContext, scalingMode, clampMode), m_browserContext (browserContext) {
     // setup framebuffers
     this->setupFramebuffers ();
+
+    if (const char* e = std::getenv ("LWE_MEDIA_TO_TEXT"); e != nullptr && e[0] != '\0') {
+        this->m_forwardMediaText = true;
+    }
 
     CefWindowInfo window_info;
     window_info.SetAsWindowless (0);
@@ -76,6 +121,124 @@ void CWeb::tickInput (const glm::ivec4& viewport) {
 
     if (this->m_browser) {
         this->updateMouse (viewport);
+        this->pumpMedia ();
+        this->pumpAudio ();
+    }
+}
+
+void CWeb::pumpAudio () {
+    CefRefPtr<CefFrame> frame = this->m_browser->GetMainFrame ();
+    if (!frame) {
+        return;
+    }
+
+    // Throttle to ~30 Hz: tickInput runs every event-loop iteration, far faster than
+    // the spectrum meaningfully changes, and each push is a parsed ExecuteJavaScript.
+    const auto now = std::chrono::steady_clock::now ();
+    if (this->m_lastAudioPush.time_since_epoch ().count () != 0 && now - this->m_lastAudioPush < 30ms) {
+        return;
+    }
+    this->m_lastAudioPush = now;
+
+    auto& recorder = this->getAudioContext ().getRecorder ();
+    recorder.update ();
+
+    // WE's audio listener receives 128 floats: indices [0..63] left, [64..127] right.
+    // LWE capture is mono, so both halves carry the same 64-band spectrum. When audio
+    // processing is disabled the recorder feeds zeros, so this is a harmless no-op.
+    std::string arr;
+    arr.reserve (128 * 8);
+    arr.push_back ('[');
+    char buf[16];
+    for (int pass = 0; pass < 2; ++pass) {
+        for (int i = 0; i < 64; ++i) {
+            if (pass != 0 || i != 0) {
+                arr.push_back (',');
+            }
+            std::snprintf (buf, sizeof (buf), "%.4f", recorder.audio64[i]);
+            arr += buf;
+        }
+    }
+    arr.push_back (']');
+
+    emitMedia (frame, "audio", arr);
+}
+
+void CWeb::pumpMedia () {
+    CefRefPtr<CefFrame> frame = this->m_browser->GetMainFrame ();
+    if (!frame) {
+        return;
+    }
+
+    // 1. Apply a finished metadata poll.
+    if (this->m_mediaPoll.valid () && this->m_mediaPoll.wait_for (0ms) == std::future_status::ready) {
+        const auto result = this->m_mediaPoll.get ();
+        if (result.has_value ()) {
+            const Media::MediaInfo& info = *result;
+
+            // Status (availability) — push on first result and on change.
+            if (!this->m_statusSent || info.available != this->m_lastAvailable) {
+                emitMedia (frame, "status", Media::webStatusJson (info.available));
+                this->m_statusSent = true;
+                this->m_lastAvailable = info.available;
+            }
+            // Properties — title / artist / album.
+            if (!this->m_haveMedia || info.title != this->m_lastMedia.title
+                || info.artist != this->m_lastMedia.artist || info.album != this->m_lastMedia.album) {
+                emitMedia (frame, "props", Media::webPropertiesJson (info));
+
+                // Optional bridge: drive wallpapers that show a text label (but don't
+                // use the WE media API) by pushing the track into their headerText /
+                // subheaderText properties via the standard wallpaperPropertyListener.
+                if (this->m_forwardMediaText && info.available && !info.title.empty ()) {
+                    std::string js
+                        = "window.wallpaperPropertyListener&&window.wallpaperPropertyListener.applyUserProperties&&"
+                          "window.wallpaperPropertyListener.applyUserProperties({"
+                          "\"headerText\":{\"value\":\""
+                        + jsEscape (info.title) + "\"},\"subheaderText\":{\"value\":\"" + jsEscape (info.artist)
+                        + "\"}});";
+                    frame->ExecuteJavaScript (js, frame->GetURL (), 0);
+                }
+            }
+            // Playback state.
+            if (!this->m_haveMedia || info.playbackState != this->m_lastMedia.playbackState) {
+                emitMedia (frame, "play", Media::webPlaybackJson (info.playbackState));
+            }
+            // Timeline — only when the second-resolution position or duration moved.
+            if (!this->m_haveMedia || std::lround (info.position) != std::lround (this->m_lastMedia.position)
+                || info.duration != this->m_lastMedia.duration) {
+                emitMedia (frame, "time", Media::webTimelineJson (info.position, info.duration));
+            }
+            // Album art — fetch off-thread when the URL changes.
+            if (!info.artUrl.empty () && info.artUrl != this->m_artSentUrl && info.artUrl != this->m_artPendingUrl
+                && !this->m_artFuture.valid ()) {
+                this->m_artPendingUrl = info.artUrl;
+                const std::string url = info.artUrl;
+                this->m_artFuture = std::async (std::launch::async, [url] () { return Media::loadArt (url, true); });
+            }
+
+            this->m_lastMedia = info;
+            this->m_haveMedia = true;
+        }
+    }
+
+    // 2. Schedule the next poll (throttled to 750ms, off the render thread).
+    if (!this->m_mediaPoll.valid ()) {
+        const auto now = std::chrono::steady_clock::now ();
+        if (this->m_lastMediaPoll.time_since_epoch ().count () == 0 || now - this->m_lastMediaPoll >= 750ms) {
+            this->m_lastMediaPoll = now;
+            this->m_mediaPoll = std::async (std::launch::async, Media::pollMediaInfo);
+        }
+    }
+
+    // 3. Apply a finished album-art load.
+    if (this->m_artFuture.valid () && this->m_artFuture.wait_for (0ms) == std::future_status::ready) {
+        const Media::ArtData art = this->m_artFuture.get ();
+        if (art.ok) {
+            emitMedia (frame, "thumb", Media::webThumbnailJson (art));
+            this->m_artSentUrl = this->m_artPendingUrl;
+        }
+        this->m_artPendingUrl.clear ();
     }
 }
 

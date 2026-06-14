@@ -12,6 +12,7 @@
 #include "WallpaperEngine/Data/Model/DynamicValue.h"
 #include "WallpaperEngine/Data/Model/ScriptedDynamicValue.h"
 #include "WallpaperEngine/Data/Model/Types.h"
+#include "WallpaperEngine/Media/MediaProvider.h"
 
 extern "C" {
 #include "quickjs.h"
@@ -118,6 +119,9 @@ private:
     JSValue ensureModule (const void* bindingKey, const std::string& scriptSource);
     void installBuiltins ();
     void refreshMediaState ();
+    // Load album-art colours off-thread when the current track's art URL changes,
+    // so mediaThumbnailChanged carries real colours instead of placeholders.
+    void refreshArtColors ();
     void dispatchMediaEvents (JSValue module, const void* bindingKey);
     void updateRuntimeGlobals (JSContext* ctx, JSValue globalObj) const;
     void updateSceneInputGlobals (JSContext* ctx, JSValue globalObj, WallpaperEngine::Render::Wallpapers::CScene* scene);
@@ -149,6 +153,7 @@ private:
 	std::string status = "Stopped";
 	std::string title;
 	std::string artist;
+	std::string album;
 	std::string artUrl;
 	double duration = 0.0;
 	double position = 0.0;
@@ -172,6 +177,12 @@ private:
     std::chrono::steady_clock::time_point m_lastMediaPoll = {};
     std::future<std::optional<MediaState>> m_mediaPollFuture = {};
     MediaState m_mediaState = {};
+    // Album-art palette, fetched off-thread keyed by art URL.
+    std::future<WallpaperEngine::Media::ArtData> m_artFuture = {};
+    std::string m_artPendingUrl = {}; // art URL currently being fetched
+    std::string m_artColorsUrl = {};  // art URL the cached colours belong to (attempted)
+    WallpaperEngine::Media::MediaColors m_artColors = {};
+    bool m_artColorsValid = false;    // colours successfully extracted for m_artColorsUrl
     bool m_builtinsInstalled = false;
 };
 } // namespace WallpaperEngine::Scripting

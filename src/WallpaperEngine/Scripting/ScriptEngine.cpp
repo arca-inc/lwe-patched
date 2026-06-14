@@ -1097,10 +1097,14 @@ static DynamicValueUniquePtr currentBoundValue (
 
 void ScriptEngine::refreshMediaState () {
     auto buildMediaState = [] () -> std::optional<MediaState> {
-	const auto line = processReadFirstLine (
-	    "playerctl",
-	    { "metadata", "--format", "{{status}}\t{{title}}\t{{artist}}\t{{mpris:length}}\t{{position}}\t{{mpris:artUrl}}" }
-	);
+	std::vector<std::string> pcArgs;
+	if (const char* player = std::getenv ("LWE_MEDIA_PLAYER"); player != nullptr && player[0] != '\0') {
+	    pcArgs.emplace_back (std::string ("--player=") + player);
+	}
+	pcArgs.emplace_back ("metadata");
+	pcArgs.emplace_back ("--format");
+	pcArgs.emplace_back ("{{status}}\t{{title}}\t{{artist}}\t{{album}}\t{{mpris:length}}\t{{position}}\t{{mpris:artUrl}}");
+	const auto line = processReadFirstLine ("playerctl", pcArgs);
 
 	if (!line.has_value ()) {
 	    return std::nullopt;
@@ -1119,9 +1123,10 @@ void ScriptEngine::refreshMediaState () {
 	next.status = parts.size () > 0 ? parts[0] : "";
 	next.title = parts.size () > 1 ? parts[1] : "";
 	next.artist = parts.size () > 2 ? parts[2] : "";
-	next.duration = (parts.size () > 3 ? parseDoubleOrZero (parts[3]) : 0.0) / 1000000.0;
-	next.position = (parts.size () > 4 ? parseDoubleOrZero (parts[4]) : 0.0) / 1000000.0;
-	next.artUrl = parts.size () > 5 ? parts[5] : "";
+	next.album = parts.size () > 3 ? parts[3] : "";
+	next.duration = (parts.size () > 4 ? parseDoubleOrZero (parts[4]) : 0.0) / 1000000.0;
+	next.position = (parts.size () > 5 ? parseDoubleOrZero (parts[5]) : 0.0) / 1000000.0;
+	next.artUrl = parts.size () > 6 ? parts[6] : "";
 
 	if (next.status == "Playing") {
 	    next.playbackState = 1;
@@ -1174,6 +1179,38 @@ void ScriptEngine::refreshMediaState () {
     this->m_mediaPollFuture = std::async (std::launch::async, buildMediaState);
 }
 
+void ScriptEngine::refreshArtColors () {
+    // Collect a finished fetch. m_artColorsUrl is set to the attempted URL whether or
+    // not extraction succeeded, so a track with broken/missing art is not re-fetched
+    // every frame; m_artColorsValid records whether real colours were obtained.
+    if (this->m_artFuture.valid ()
+        && this->m_artFuture.wait_for (std::chrono::milliseconds (0)) == std::future_status::ready) {
+        WallpaperEngine::Media::ArtData art;
+        try {
+            art = this->m_artFuture.get ();
+        } catch (...) {
+            art = {};
+        }
+        this->m_artColorsUrl = this->m_artPendingUrl;
+        this->m_artColors = art.ok ? art.colors : WallpaperEngine::Media::MediaColors {};
+        this->m_artColorsValid = art.ok;
+        this->m_artPendingUrl.clear ();
+    }
+
+    if (this->m_artFuture.valid ()) {
+        return;
+    }
+
+    const std::string& url = this->m_mediaState.artUrl;
+    if (!url.empty () && url != this->m_artColorsUrl && url != this->m_artPendingUrl) {
+        this->m_artColorsValid = false; // new track's colours are not ready yet
+        this->m_artPendingUrl = url;
+        const std::string copy = url;
+        this->m_artFuture
+            = std::async (std::launch::async, [copy] () { return WallpaperEngine::Media::loadArt (copy, false); });
+    }
+}
+
 static JSValue makeVec3Object (JSContext* ctx, float x, float y, float z) {
     JSValue result = JS_NewObject (ctx);
     JS_SetPropertyStr (ctx, result, "x", JS_NewFloat64 (ctx, x));
@@ -1200,16 +1237,18 @@ static bool callModuleFunction (JSContext* ctx, JSValue module, const char* name
 
 void ScriptEngine::dispatchMediaEvents (JSValue module, const void* bindingKey) {
     this->refreshMediaState ();
+    this->refreshArtColors ();
     JSContext* ctx = this->m_context;
 
-    const std::string propertiesSignature = this->m_mediaState.title + "\n" + this->m_mediaState.artist;
+    const std::string propertiesSignature
+	= this->m_mediaState.title + "\n" + this->m_mediaState.artist + "\n" + this->m_mediaState.album;
     if (this->m_lastMediaProperties.find (bindingKey) == this->m_lastMediaProperties.end ()
 	|| this->m_lastMediaProperties[bindingKey] != propertiesSignature) {
 	this->m_lastMediaProperties[bindingKey] = propertiesSignature;
 	JSValue propertiesEvent = JS_NewObject (ctx);
 	JS_SetPropertyStr (ctx, propertiesEvent, "title", JS_NewString (ctx, this->m_mediaState.title.c_str ()));
 	JS_SetPropertyStr (ctx, propertiesEvent, "artist", JS_NewString (ctx, this->m_mediaState.artist.c_str ()));
-	JS_SetPropertyStr (ctx, propertiesEvent, "albumTitle", JS_NewString (ctx, ""));
+	JS_SetPropertyStr (ctx, propertiesEvent, "albumTitle", JS_NewString (ctx, this->m_mediaState.album.c_str ()));
 	const bool calledProperties
 	    = callModuleFunction (ctx, module, "mediaPropertiesChanged", propertiesEvent, "mediaPropertiesChanged");
 	if (calledProperties && std::getenv ("LWE_MEDIA_DEBUG") != nullptr) {
@@ -1243,14 +1282,23 @@ void ScriptEngine::dispatchMediaEvents (JSValue module, const void* bindingKey) 
 	JS_FreeValue (ctx, timelineEvent);
     }
 
-    if (this->m_lastMediaThumbnail[bindingKey] != this->m_mediaState.artUrl) {
-	this->m_lastMediaThumbnail[bindingKey] = this->m_mediaState.artUrl;
+    // Use the real extracted palette once it is ready for this art URL; until then
+    // (or if extraction failed) fall back to the neutral MediaColors defaults. The "|c"
+    // suffix makes the event re-fire when colours arrive after the initial URL change.
+    const bool colorsReady = this->m_artColorsValid && this->m_artColorsUrl == this->m_mediaState.artUrl;
+    const std::string thumbnailSignature = this->m_mediaState.artUrl + (colorsReady ? "|c" : "");
+    if (this->m_lastMediaThumbnail[bindingKey] != thumbnailSignature) {
+	this->m_lastMediaThumbnail[bindingKey] = thumbnailSignature;
+	const WallpaperEngine::Media::MediaColors fallback {};
+	const WallpaperEngine::Media::MediaColors& c = colorsReady ? this->m_artColors : fallback;
 	JSValue event = JS_NewObject (ctx);
 	JS_SetPropertyStr (ctx, event, "url", JS_NewString (ctx, this->m_mediaState.artUrl.c_str ()));
-	JS_SetPropertyStr (ctx, event, "primaryColor", makeVec3Object (ctx, 0.12f, 0.12f, 0.12f));
-	JS_SetPropertyStr (ctx, event, "secondaryColor", makeVec3Object (ctx, 0.0f, 0.0f, 0.0f));
-	JS_SetPropertyStr (ctx, event, "tertiaryColor", makeVec3Object (ctx, 0.25f, 0.25f, 0.25f));
-	JS_SetPropertyStr (ctx, event, "highContrastColor", makeVec3Object (ctx, 1.0f, 1.0f, 1.0f));
+	JS_SetPropertyStr (ctx, event, "primaryColor", makeVec3Object (ctx, c.primary.r, c.primary.g, c.primary.b));
+	JS_SetPropertyStr (ctx, event, "secondaryColor", makeVec3Object (ctx, c.secondary.r, c.secondary.g, c.secondary.b));
+	JS_SetPropertyStr (ctx, event, "tertiaryColor", makeVec3Object (ctx, c.tertiary.r, c.tertiary.g, c.tertiary.b));
+	JS_SetPropertyStr (
+	    ctx, event, "highContrastColor", makeVec3Object (ctx, c.highContrast.r, c.highContrast.g, c.highContrast.b)
+	);
 	callModuleFunction (ctx, module, "mediaThumbnailChanged", event, "mediaThumbnailChanged");
 	JS_FreeValue (ctx, event);
     }

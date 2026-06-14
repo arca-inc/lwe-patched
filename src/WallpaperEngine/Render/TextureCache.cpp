@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -378,7 +379,13 @@ std::shared_ptr<const TextureProvider> tryLoadMediaThumbnail (RenderContext& con
     state.lastMetadataPoll = now;
     state.hasMetadataPoll = true;
 
-    const std::string artUrl = processReadFirstLine ("playerctl", { "metadata", "mpris:artUrl" });
+    std::vector<std::string> pcArgs;
+    if (const char* player = std::getenv ("LWE_MEDIA_PLAYER"); player != nullptr && player[0] != '\0') {
+	pcArgs.emplace_back (std::string ("--player=") + player);
+    }
+    pcArgs.emplace_back ("metadata");
+    pcArgs.emplace_back ("mpris:artUrl");
+    const std::string artUrl = processReadFirstLine ("playerctl", pcArgs);
     if (artUrl.empty ()) {
 	return previous ? state.previousTexture : nullptr;
     }

@@ -453,6 +453,9 @@ set(COMMON_SOURCES
     src/WallpaperEngine/WebBrowser/WebBrowserContext.cpp
     src/WallpaperEngine/WebBrowser/WebBrowserContext.h
 
+    src/WallpaperEngine/Media/MediaProvider.cpp
+    src/WallpaperEngine/Media/MediaProvider.h
+
     src/WallpaperEngine/Data/Assets/Types.h
     src/WallpaperEngine/Data/Assets/Texture.h
     src/WallpaperEngine/Data/Assets/Package.h

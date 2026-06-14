@@ -3,6 +3,7 @@
 #include "PlaybackRecorder.h"
 #include "kiss_fftr.h"
 #include <pulse/pulseaudio.h>
+#include <string>
 
 #define WAVE_BUFFER_SIZE 1024
 
@@ -21,6 +22,12 @@ public:
 	size_t currentWritePointer;
 	bool fullFrameReady;
 	pa_stream* captureStream;
+	// Capture target (raw LWE_AUDIO_DEVICE): "" = default output monitor, a source
+	// name = that monitor, or "app:<application name>" = only that app's stream.
+	std::string target;
+	// What the stream is currently bound to, so re-resolution stays idempotent.
+	std::string currentMonitor;
+	int currentSinkInput = -1; // sink-input filter in effect (-1 = whole monitor)
     };
 
     PulseAudioPlaybackRecorder ();

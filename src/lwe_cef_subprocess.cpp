@@ -3,14 +3,67 @@
 // Custom schemes must be registered here too, otherwise the renderer/network
 // service processes won't recognise wp:// URLs and navigation fails.
 #include "include/cef_app.h"
+#include "include/cef_render_process_handler.h"
 #include "include/cef_scheme.h"
 #include "WallpaperEngine/WebBrowser/WebBrowserContext.h"
 #include <cstdlib>
 #include <string>
 
-class SubprocessSchemeApp : public CefApp {
+// Wallpaper Engine web "media integration" API. Web wallpapers call these globals at
+// document-start to receive now-playing track info (title/artist/album), the album-art
+// thumbnail + extracted colours, the play/pause state and the timeline. They MUST exist
+// before the page's own scripts run, so they are installed here in the render process at
+// context creation. The browser process polls playerctl (MPRIS) and pushes data later by
+// calling window.__lweMedia.* via CefFrame::ExecuteJavaScript (see CefWebBackend).
+static const char* const kMediaApiBootstrap =
+    "(function(){"
+    "if(window.__lweMedia)return;"
+    "var M={cbStatus:null,cbProps:null,cbThumb:null,cbTime:null,cbPlay:null,cbAudio:null,"
+    "lastStatus:null,lastProps:null,lastThumb:null,lastTime:null,lastPlay:null};"
+    "window.wallpaperMediaIntegration=window.wallpaperMediaIntegration||"
+    "{PLAYBACK_STOPPED:0,PLAYBACK_PLAYING:1,PLAYBACK_PAUSED:2};"
+    "function reg(cbKey,lastKey){return function(cb){M[cbKey]=cb;"
+    "if(typeof cb==='function'&&M[lastKey]!=null){try{cb(M[lastKey]);}catch(e){}}};}"
+    "window.wallpaperRegisterMediaStatusListener=reg('cbStatus','lastStatus');"
+    "window.wallpaperRegisterMediaPropertiesListener=reg('cbProps','lastProps');"
+    "window.wallpaperRegisterMediaThumbnailListener=reg('cbThumb','lastThumb');"
+    "window.wallpaperRegisterMediaTimelineListener=reg('cbTime','lastTime');"
+    "window.wallpaperRegisterMediaPlaybackListener=reg('cbPlay','lastPlay');"
+    // Audio-reactive listener: store the page's callback; the browser process pushes
+    // the live FFT spectrum into window.__lweMedia.audio() each frame (see CWeb).
+    "window.wallpaperRegisterAudioListener=function(cb){M.cbAudio=cb;};"
+    // random-file global is not implemented on the CEF backend; stub it so wallpapers
+    // that call it at startup don't throw.
+    "var noop=function(){};"
+    "window.wallpaperRequestRandomFileForProperty=window.wallpaperRequestRandomFileForProperty||noop;"
+    "function fire(cbKey,lastKey,d){M[lastKey]=d;var c=M[cbKey];"
+    "if(typeof c==='function'){try{c(d);}catch(e){if(window.console)console.log('[LWE] media listener error: '+e);}}}"
+    "window.__lweMedia={"
+    "status:function(d){fire('cbStatus','lastStatus',d);},"
+    "props:function(d){fire('cbProps','lastProps',d);},"
+    "thumb:function(d){fire('cbThumb','lastThumb',d);},"
+    "time:function(d){fire('cbTime','lastTime',d);},"
+    "play:function(d){fire('cbPlay','lastPlay',d);},"
+    // Audio has no 'last' replay (it streams every frame); just invoke the callback.
+    "audio:function(a){var c=M.cbAudio;if(typeof c==='function'){"
+    "try{c(a);}catch(e){if(window.console)console.log('[LWE] audio listener error: '+e);}}}};"
+    "})();";
+
+class SubprocessSchemeApp : public CefApp, public CefRenderProcessHandler {
 public:
     SubprocessSchemeApp () = default;
+
+    CefRefPtr<CefRenderProcessHandler> GetRenderProcessHandler () override { return this; }
+
+    // Install the WE media-integration API in every main-frame V8 context at
+    // document-start, before the wallpaper's scripts execute.
+    void OnContextCreated (
+        CefRefPtr<CefBrowser> /*browser*/, CefRefPtr<CefFrame> frame, CefRefPtr<CefV8Context> /*context*/
+    ) override {
+        if (frame && frame->IsMain ()) {
+            frame->ExecuteJavaScript (kMediaApiBootstrap, frame->GetURL (), 0);
+        }
+    }
 
     void OnRegisterCustomSchemes (CefRawPtr<CefSchemeRegistrar> registrar) override {
         // Fixed scheme name — no workshopId suffix — covers all wallpapers and

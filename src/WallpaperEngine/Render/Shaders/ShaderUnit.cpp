@@ -423,14 +423,18 @@ std::string ShaderUnit::applyFragmentTexCoordCompatibility (std::string source) 
     const std::regex cast2BeforeTexCoord (R"((CAST2\s*\([^)]+\)\s*[-+*/]\s*)\bv_TexCoord\b)");
 
     const std::regex wideTexCoordDecl (R"(\bvarying\s+vec[34]\s+v_TexCoord\s*;)");
-    if (!std::regex_search (source, wideTexCoordDecl)
-	|| (!std::regex_search (source, texCoordBeforeCast2) && !std::regex_search (source, cast2BeforeTexCoord))) {
+    if (!std::regex_search (source, wideTexCoordDecl)) {
 	return source;
     }
 
     const std::string original = source;
     source = std::regex_replace (source, texCoordBeforeCast2, "v_TexCoord.xy$1");
     source = std::regex_replace (source, cast2BeforeTexCoord, "$1v_TexCoord.xy");
+    
+    const std::regex implicitVec2Assign (R"(\b(vec2\s+[A-Za-z0-9_]+\s*=\s*)v_TexCoord\s*;)");
+    source = std::regex_replace (source, implicitVec2Assign, "$1v_TexCoord.xy;");
+    const std::regex implicitVec3Assign (R"(\b(vec3\s+[A-Za-z0-9_]+\s*=\s*)v_TexCoord\s*;)");
+    source = std::regex_replace (source, implicitVec3Assign, "$1v_TexCoord.xyz;");
 
     if (source != original) {
 	sLog.out ("Applied fragment TexCoord vec2 compatibility in ", this->m_file);

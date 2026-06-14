@@ -1,3 +1,4 @@
+#include <iostream>
 #include "ScriptEngine.h"
 #include "WallpaperEngine/Audio/AudioContext.h"
 #include "WallpaperEngine/Audio/Drivers/Recorders/PlaybackRecorder.h"
@@ -309,6 +310,9 @@ static JSValue constructVectorObject (JSContext* ctx, const char* name, const st
 
 JSValue ScriptEngine::dynamicValueToJS (const DynamicValue& value) const {
     JSContext* ctx = this->m_context;
+
+    if (value.getType() == DynamicValue::Null) {
+    }
 
     switch (value.getType ()) {
 	case DynamicValue::String:
@@ -664,6 +668,12 @@ globalThis.Vec4 = class Vec4 {
   copy() { return new Vec4(this.x, this.y, this.z, this.w); }
   toString() { return this.x + ' ' + this.y + ' ' + this.z + ' ' + this.w; }
 };
+globalThis.WEVector = {
+  angleVector2(angle) {
+    let rad = angle * Math.PI / 180.0;
+    return new Vec2(Math.sin(rad), -Math.cos(rad));
+  }
+};
 globalThis.WEColor = {
   rgb2hsv(c) {
     const r = c.x, g = c.y, b = c.z, max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
@@ -790,6 +800,26 @@ globalThis.thisScene = {
   },
   enumerateLayers() {
     return globalThis.__layerList || [];
+  },
+  createLayer(path) {
+    return {
+      name: path,
+      origin: typeof Vec3 !== 'undefined' ? new Vec3(0,0,0) : {x:0, y:0, z:0},
+      scale: typeof Vec3 !== 'undefined' ? new Vec3(1,1,1) : {x:1, y:1, z:1},
+      angles: typeof Vec3 !== 'undefined' ? new Vec3(0,0,0) : {x:0, y:0, z:0},
+      parallaxDepth: typeof Vec2 !== 'undefined' ? new Vec2(0,0) : {x:0, y:0},
+      alpha: 1,
+      visible: true,
+      alignment: 0,
+      color: typeof Vec3 !== 'undefined' ? new Vec3(1,1,1) : {x:1, y:1, z:1}
+    };
+  },
+  getLayerIndex(layer) {
+    return 0;
+  },
+  sortLayer(layer, index) {
+  },
+  destroyLayer(layer) {
   }
 };
 globalThis.createScriptProperties = function() {
@@ -929,6 +959,15 @@ static void syncLayerObjectProperties (JSContext* ctx, JSValue layer, const Obje
 	ctx, layer, "getTextureAnimation", JS_NewCFunction (ctx, jsGetTextureAnimation, "getTextureAnimation", 0)
     );
     JS_SetPropertyStr (ctx, layer, "getAnimation", JS_NewCFunction (ctx, jsGetTextureAnimation, "getAnimation", 0));
+
+    JS_SetPropertyStr(ctx, layer, "origin", constructVectorObject(ctx, "Vec3", {0,0,0}));
+    JS_SetPropertyStr(ctx, layer, "scale", constructVectorObject(ctx, "Vec3", {1,1,1}));
+    JS_SetPropertyStr(ctx, layer, "angles", constructVectorObject(ctx, "Vec3", {0,0,0}));
+    JS_SetPropertyStr(ctx, layer, "color", constructVectorObject(ctx, "Vec3", {1,1,1}));
+    JS_SetPropertyStr(ctx, layer, "parallaxDepth", constructVectorObject(ctx, "Vec2", {0,0}));
+    JS_SetPropertyStr(ctx, layer, "alpha", JS_NewFloat64(ctx, 1.0));
+    JS_SetPropertyStr(ctx, layer, "visible", JS_NewBool(ctx, true));
+    JS_SetPropertyStr(ctx, layer, "alignment", JS_NewInt32(ctx, 0));
 
     for (const char* property : { "origin", "text", "scale", "angles", "visible", "alpha", "color", "parallaxDepth", "pointSize" }) {
 	if (const auto* setting = settingForProperty (object, property); setting && setting->value) {
@@ -1619,6 +1658,10 @@ ScriptLayerHandle ScriptEngine::createLayerScript (
 	    << "    get currentTime() { var c = globalThis.__sceneCtx; return c ? c.time : 0; },\n"
 	    << "    get dt()          { var c = globalThis.__sceneCtx; return c ? c.dt   : 0; },\n"
 	    << "    get fps()         { var c = globalThis.__sceneCtx; return c ? c.fps  : 60; },\n"
+	    << "    createLayer: function(path) { return { name: path, origin: typeof Vec3 !== 'undefined' ? new Vec3(0,0,0) : {x:0,y:0,z:0}, scale: typeof Vec3 !== 'undefined' ? new Vec3(1,1,1) : {x:1,y:1,z:1}, angles: typeof Vec3 !== 'undefined' ? new Vec3(0,0,0) : {x:0,y:0,z:0}, parallaxDepth: typeof Vec2 !== 'undefined' ? new Vec2(0,0) : {x:0,y:0}, alpha: 1, visible: true, alignment: 0, color: typeof Vec3 !== 'undefined' ? new Vec3(1,1,1) : {x:1,y:1,z:1} }; },\n"
+	    << "    getLayerIndex: function(layer) { return 0; },\n"
+	    << "    sortLayer: function(layer, index) { },\n"
+	    << "    destroyLayer: function(layer) { }\n"
 	    << "  };\n"
 	    // Minimal WE `engine` shim. Real Wallpaper Engine exposes a broad API
 	    // (media events, audio buffer, user input); we provide just enough for
@@ -1826,6 +1869,15 @@ DynamicValueUniquePtr ScriptEngine::evaluate (
     this->callModuleWithProps (ctx, module, "setScriptProperties", propsObj);
     this->initializeModuleIfNeeded (ctx, module, bindingKey, currentValue, scene != nullptr);
     this->callModuleWithProps (ctx, module, "applyUserProperties", propsObj);
+
+    if (!this->m_initializedModules.contains (bindingKey)) {
+        JS_SetPropertyStr (ctx, globalObj, "__scriptProps", JS_UNDEFINED);
+        JS_FreeValue (ctx, globalObj);
+        JS_FreeValue (ctx, propsObj);
+        auto fallback = std::make_unique<DynamicValue> ();
+        fallback->update (currentValue);
+        return fallback;
+    }
 
     this->dispatchMediaEvents (module, bindingKey);
     this->runIntervals (ctx, globalObj, bindingKeyString);

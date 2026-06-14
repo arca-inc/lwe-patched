@@ -167,9 +167,9 @@ ObjectUniquePtr ObjectParser::parse (const JSON& it, const Project& project) {
 	return parseImage (it, project, std::move (basedata), *imageIt);
     } else if (soundIt != it.end () && soundIt->is_array ()) {
 	return parseSound (it, std::move (basedata));
-    } else if (particleIt != it.end ()) {
+    } else if (particleIt != it.end () && !particleIt->is_null ()) {
 	return parseParticle (it, project, std::move (basedata));
-    } else if (textIt != it.end ()) {
+    } else if (textIt != it.end () && !textIt->is_null ()) {
 	return parseText (it, project, std::move (basedata));
     } else if (lightIt != it.end ()) {
 	sLog.error ("Light objects are not supported yet");

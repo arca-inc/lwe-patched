@@ -110,6 +110,20 @@ std::shared_ptr<const CFBO> CPass::resolveFBO (const std::string& name) const {
     return fbo;
 }
 
+std::shared_ptr<const CFBO> CPass::resolveFBOOrPrevious (const std::string& name) const {
+    // Some WE shaders reference render targets we don't implement (e.g. the full
+    // composition buffer "_rt_FullCompoBuffer*"). Rather than failing the whole pass,
+    // fall back to the previous input texture (nullptr == "previous" downstream) so the
+    // effect still renders with a sensible source instead of spamming errors per frame.
+    auto fbo = this->m_fboProvider->find (name);
+    if (fbo == nullptr) {
+	sLog.debug ("FBO ", name, " not available, falling back to previous input");
+	// nullptr is the same sentinel a "previous" bind uses downstream.
+	return nullptr;
+    }
+    return fbo;
+}
+
 void CPass::setupRenderFramebuffer () const {
     // set the framebuffer we're drawing to
     glBindFramebuffer (GL_FRAMEBUFFER, this->m_drawTo->getFramebuffer ());
@@ -672,7 +686,7 @@ void CPass::setupTextureUniforms () {
     for (const auto& [index, textureName] : this->m_pass.usertextures) {
 	try {
 	    if (textureName.find ("_rt_") == 0 || textureName.find ("_alias_") == 0) {
-		this->m_textures[index] = this->resolveFBO (textureName);
+		this->m_textures[index] = this->resolveFBOOrPrevious (textureName);
 	    } else if (!textureName.empty ()) {
 		this->m_textures[index] = this->getContext ().resolveTexture (textureName);
 	    }
@@ -685,7 +699,7 @@ void CPass::setupTextureUniforms () {
     for (const auto& [index, textureName] : this->m_override.textures) {
 	try {
 	    if (textureName.find ("_rt_") == 0 || textureName.find ("_alias_") == 0) {
-		this->m_textures[index] = this->resolveFBO (textureName);
+		this->m_textures[index] = this->resolveFBOOrPrevious (textureName);
 	    } else if (!textureName.empty ()) {
 		this->m_textures[index] = this->getContext ().resolveTexture (textureName);
 	    }

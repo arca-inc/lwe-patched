@@ -1,5 +1,5 @@
 #include <SDL.h>
-
+#include <cstdlib>
 #include "CSound.h"
 
 #include "WallpaperEngine/FileSystem/Container.h"
@@ -23,15 +23,19 @@ CSound::~CSound () {
 }
 
 void CSound::load () {
-    for (const auto& cur : this->m_sound.sounds) {
-	auto stream
-	    = new Audio::AudioStream (this->getScene ().getAudioContext (), this->getAssetLocator ().read (cur));
+    if (this->m_sound.sounds.empty()) return;
 
-	stream->setRepeat (this->m_sound.playbackmode.has_value () && this->m_sound.playbackmode == "loop");
+    // Pick a random sound instead of playing all of them simultaneously
+    int randomIndex = std::rand() % this->m_sound.sounds.size();
+    const auto& cur = this->m_sound.sounds[randomIndex];
 
-	// add the stream to the context so it can be played
-	this->m_audioStreams.insert_or_assign (this->getScene ().getAudioContext ().addStream (stream), stream);
-    }
+    auto stream
+        = new Audio::AudioStream (this->getScene ().getAudioContext (), this->getAssetLocator ().read (cur));
+
+    stream->setRepeat (this->m_sound.playbackmode.has_value () && this->m_sound.playbackmode == "loop");
+
+    // add the stream to the context so it can be played
+    this->m_audioStreams.insert_or_assign (this->getScene ().getAudioContext ().addStream (stream), stream);
 }
 
 void CSound::render () { }

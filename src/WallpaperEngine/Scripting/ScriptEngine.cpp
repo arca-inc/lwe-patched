@@ -947,11 +947,27 @@ static void syncLayerObjectProperties (JSContext* ctx, JSValue layer, const Obje
 	JSValue emitters = JS_NewArray (ctx);
 	for (size_t i = 0; i < particle.emitters.size (); ++i) {
 	    JSValue emitter = JS_NewObject (ctx);
-	    JS_SetPropertyStr (ctx, emitter, "name", JS_NewString (ctx, particle.emitters[i].name.c_str ()));
-	    JS_SetPropertyStr (ctx, emitter, "distancemin", constructVectorObject (ctx, "Vec3", { particle.emitters[i].distanceMin.x, particle.emitters[i].distanceMin.y, particle.emitters[i].distanceMin.z }));
-	    JS_SetPropertyStr (ctx, emitter, "distancemax", constructVectorObject (ctx, "Vec3", { particle.emitters[i].distanceMax.x, particle.emitters[i].distanceMax.y, particle.emitters[i].distanceMax.z }));
-	    JS_SetPropertyStr (ctx, emitter, "origin", constructVectorObject (ctx, "Vec3", { particle.emitters[i].origin.x, particle.emitters[i].origin.y, particle.emitters[i].origin.z }));
-	    JS_SetPropertyStr (ctx, emitter, "directions", constructVectorObject (ctx, "Vec3", { particle.emitters[i].directions.x, particle.emitters[i].directions.y, particle.emitters[i].directions.z }));
+	    const auto& e = particle.emitters[i];
+	    JS_SetPropertyStr (ctx, emitter, "name", JS_NewString (ctx, e.name.c_str ()));
+	    JS_SetPropertyStr (ctx, emitter, "distancemin", constructVectorObject (ctx, "Vec3", { e.distanceMin.x, e.distanceMin.y, e.distanceMin.z }));
+	    JS_SetPropertyStr (ctx, emitter, "distancemax", constructVectorObject (ctx, "Vec3", { e.distanceMax.x, e.distanceMax.y, e.distanceMax.z }));
+	    JS_SetPropertyStr (ctx, emitter, "origin", constructVectorObject (ctx, "Vec3", { e.origin.x, e.origin.y, e.origin.z }));
+	    JS_SetPropertyStr (ctx, emitter, "directions", constructVectorObject (ctx, "Vec3", { e.directions.x, e.directions.y, e.directions.z }));
+	    JS_SetPropertyStr (ctx, emitter, "sign", constructVectorObject (ctx, "Vec3", { static_cast<float> (e.sign.x), static_cast<float> (e.sign.y), static_cast<float> (e.sign.z) }));
+	    JS_SetPropertyStr (ctx, emitter, "instantaneous", JS_NewInt32 (ctx, e.instantaneous));
+	    JS_SetPropertyStr (ctx, emitter, "speedmin", JS_NewFloat64 (ctx, e.speedMin));
+	    JS_SetPropertyStr (ctx, emitter, "speedmax", JS_NewFloat64 (ctx, e.speedMax));
+	    JS_SetPropertyStr (ctx, emitter, "rate", JS_NewFloat64 (ctx, e.rate));
+	    JS_SetPropertyStr (ctx, emitter, "controlpoint", JS_NewInt32 (ctx, e.controlPoint));
+	    JS_SetPropertyStr (ctx, emitter, "flags", JS_NewInt32 (ctx, e.flags));
+	    JS_SetPropertyStr (ctx, emitter, "cone", JS_NewFloat64 (ctx, e.cone));
+	    JS_SetPropertyStr (ctx, emitter, "delay", JS_NewFloat64 (ctx, e.delay));
+	    JS_SetPropertyStr (ctx, emitter, "duration", JS_NewFloat64 (ctx, e.duration));
+	    JS_SetPropertyStr (ctx, emitter, "audioprocessingbounds", constructVectorObject (ctx, "Vec2", { e.audioProcessingBounds.x, e.audioProcessingBounds.y }));
+	    JS_SetPropertyStr (ctx, emitter, "audioprocessingexponent", JS_NewInt32 (ctx, e.audioProcessingExponent));
+	    JS_SetPropertyStr (ctx, emitter, "audioprocessingfrequencystart", JS_NewInt32 (ctx, e.audioProcessingFrequencyStart));
+	    JS_SetPropertyStr (ctx, emitter, "audioprocessingfrequencyend", JS_NewInt32 (ctx, e.audioProcessingFrequencyEnd));
+	    JS_SetPropertyStr (ctx, emitter, "audioprocessingmode", JS_NewInt32 (ctx, e.audioProcessingMode));
 	    JS_SetPropertyUint32 (ctx, emitters, i, emitter);
 	}
 	JS_SetPropertyStr (ctx, layer, "__emitters", emitters);

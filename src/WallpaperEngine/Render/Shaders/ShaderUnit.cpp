@@ -506,6 +506,14 @@ void ShaderUnit::parseComboConfiguration (const std::string& content, const int 
 void ShaderUnit::parseParameterConfiguration (
     const std::string& type, const std::string& name, const std::string& content
 ) {
+    // Not every commented uniform carries JSON metadata; built-in uniforms such as
+    // g_LayerModelMatrix often have a plain descriptive comment. Only treat the
+    // comment as metadata when it actually looks like a JSON object.
+    const size_t firstNonSpace = content.find_first_not_of (" \t\r\n");
+    if (firstNonSpace == std::string::npos || content[firstNonSpace] != '{') {
+	return;
+    }
+
     JSON data;
     try {
 	data = JSON::parse (content);

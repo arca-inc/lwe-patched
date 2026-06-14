@@ -84,6 +84,11 @@ private:
      */
     void preprocessRequires ();
     /**
+     * Comments out unmatched #endif directives. Some official Wallpaper Engine shaders ship
+     * with a stray #endif that WE's own transpiler tolerates but glslang rejects.
+     */
+    void balanceConditionals ();
+    /**
      * Resolves a #require module name to generated GLSL code
      *
      * @param moduleName The module to resolve (e.g. "LightingV1")

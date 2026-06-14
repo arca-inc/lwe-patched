@@ -82,6 +82,7 @@ void ShaderUnit::preprocess () {
     this->preprocessIncludes ();
     this->preprocessRequires ();
     this->preprocessVariables ();
+    this->balanceConditionals ();
 
     // replace gl_FragColor with the equivalent
     const std::string from = "gl_FragColor";
@@ -92,6 +93,51 @@ void ShaderUnit::preprocess () {
 	this->m_preprocessed.replace (start_pos, from.length (), to);
 	start_pos += to.length (); // Handles case where 'to' is a substring of 'from'
     }
+}
+
+void ShaderUnit::balanceConditionals () {
+    std::string result;
+    result.reserve (this->m_preprocessed.size ());
+    int depth = 0;
+    size_t start = 0;
+    const std::string& src = this->m_preprocessed;
+
+    while (start <= src.size ()) {
+	size_t end = src.find ('\n', start);
+	const bool lastLine = (end == std::string::npos);
+	if (lastLine)
+	    end = src.size ();
+
+	const std::string_view line (src.data () + start, end - start);
+	const size_t firstNonSpace = line.find_first_not_of (" \t");
+
+	bool stray = false;
+	if (firstNonSpace != std::string_view::npos && line[firstNonSpace] == '#') {
+	    const std::string_view directive = line.substr (firstNonSpace);
+	    if (directive.starts_with ("#if")) { // #if / #ifdef / #ifndef
+		++depth;
+	    } else if (directive.starts_with ("#endif")) {
+		if (depth == 0) {
+		    stray = true; // unmatched closing directive: drop it
+		} else {
+		    --depth;
+		}
+	    }
+	}
+
+	if (stray) {
+	    result += "// [lwe] dropped unmatched ";
+	    result += line;
+	} else {
+	    result += line;
+	}
+	if (!lastLine)
+	    result += '\n';
+
+	start = end + 1;
+    }
+
+    this->m_preprocessed = std::move (result);
 }
 
 void ShaderUnit::preprocessVariables () {

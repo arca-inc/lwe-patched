@@ -1,3 +1,4 @@
+#include <fstream>
 #include "GLSLContext.h"
 #include "WallpaperEngine/Logging/Log.h"
 
@@ -145,6 +146,10 @@ std::pair<std::string, std::string> GLSLContext::toGlsl (const std::string& vert
 
     if (!vertexShader.parse (&BuiltInResource, 100, false, EShMsgDefault)) {
 	sLog.error ("GLSL vertex unit parsing Failed: ", vertexShader.getInfoLog ());
+	if (const char* dbg = getenv ("LWE_DUMP_SHADER_FAIL"); dbg != nullptr) {
+	    std::ofstream f ("/tmp/lwe_fail_vertex.glsl");
+	    f << vertex;
+	}
 	return { "", "" };
     }
     glslang::TShader fragmentShader (EShLangFragment);

@@ -191,7 +191,9 @@ void WallpaperApplication::loadBackgrounds () {
 	    path = this->m_context.settings.general.defaultPlaylist->items.front ();
 	}
 
-	this->m_backgrounds["default"] = this->loadBackground (path);
+	if (auto project = this->loadBackground (path)) {
+	    this->m_backgrounds["default"] = std::move(project);
+	}
 	return;
     }
 
@@ -201,10 +203,14 @@ void WallpaperApplication::loadBackgrounds () {
 	    continue;
 	}
 	// screens with no path should use the default
+	ProjectUniquePtr project;
 	if (path.empty ()) {
-	    this->m_backgrounds[screen] = this->loadBackground (this->m_context.settings.general.defaultBackground);
+	    project = this->loadBackground (this->m_context.settings.general.defaultBackground);
 	} else {
-	    this->m_backgrounds[screen] = this->loadBackground (path);
+	    project = this->loadBackground (path);
+	}
+	if (project) {
+	    this->m_backgrounds[screen] = std::move(project);
 	}
     }
 
@@ -221,28 +227,35 @@ void WallpaperApplication::loadBackgrounds () {
 
 	// use the first screen's name as the group key for the loaded project
 	const std::string groupKey = "span:" + spanGroup.screens.front ();
-	this->m_backgrounds[groupKey] = this->loadBackground (bgPath);
+	if (auto project = this->loadBackground (bgPath)) {
+	    this->m_backgrounds[groupKey] = std::move(project);
+	}
     }
 }
 
 ProjectUniquePtr WallpaperApplication::loadBackground (const std::string& bg) {
-    auto container = this->setupAssetLocator (bg);
-    auto json = WallpaperEngine::Data::JSON::JSON::parse (container->readString ("project.json"));
+    try {
+        auto container = this->setupAssetLocator (bg);
+        auto json = WallpaperEngine::Data::JSON::JSON::parse (container->readString ("project.json"));
 
-    // when a background is loaded, reset the screenshot variables
-    // this allows taking screenshots after a background changes
-    // useful for playlists
-    if (this->m_context.settings.screenshot.take) {
-	this->m_nextFrameScreenshot = this->m_context.settings.screenshot.delay;
+        // when a background is loaded, reset the screenshot variables
+        // this allows taking screenshots after a background changes
+        // useful for playlists
+        if (this->m_context.settings.screenshot.take) {
+            this->m_nextFrameScreenshot = this->m_context.settings.screenshot.delay;
 
-	if (this->m_videoDriver != nullptr) {
-	    this->m_nextFrameScreenshot += this->m_videoDriver->getFrameCounter ();
-	}
+            if (this->m_videoDriver != nullptr) {
+                this->m_nextFrameScreenshot += this->m_videoDriver->getFrameCounter ();
+            }
 
-	this->m_screenShotTaken = false;
+            this->m_screenShotTaken = false;
+        }
+
+        return WallpaperEngine::Data::Parsers::ProjectParser::parse (json, std::move (container));
+    } catch (const std::exception& e) {
+        sLog.error ("Failed to load background ", bg, ": ", e.what ());
+        return nullptr;
     }
-
-    return WallpaperEngine::Data::Parsers::ProjectParser::parse (json, std::move (container));
 }
 
 std::vector<std::size_t>
@@ -433,6 +446,9 @@ void WallpaperApplication::advancePlaylist (
 	}
 
 	auto project = this->loadBackground (nextPath.string ());
+	if (!project) {
+	    throw std::runtime_error ("Failed to load background");
+	}
 
 	this->setupPropertiesForProject (*project);
 	this->ensureBrowserForProject (*project);

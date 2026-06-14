@@ -94,7 +94,15 @@ public:
 	    return defaultValue;
 	}
 
-	return (*it);
+	// the conversion to T happens inside the try so that a JSON type_error
+	// (e.g. a field that is a string where an int is expected) falls back to
+	// the default instead of crashing. *it relies on nlohmann's implicit
+	// conversion operator, which also covers custom types like glm::vec3.
+	try {
+	    return *it;
+	} catch (...) {
+	    return defaultValue;
+	}
     }
     [[nodiscard]] UserSettingUniquePtr user (const std::string& key, const Properties& properties) const;
     template <typename T>

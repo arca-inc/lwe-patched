@@ -263,6 +263,8 @@ TextUniquePtr ObjectParser::parseText (const JSON& it, const Project& project, O
     );
 
     widenColorToVec4 (*result->color->value);
+    // origin / groupScale / groupAngles are part of the shared ObjectData base and are
+    // already bound for the script context in parse() before the base is moved in here.
     bindScriptContext (result->visible, result->id, result->name, "visible");
     bindScriptContext (result->color, result->id, result->name, "color");
     bindScriptContext (result->alpha, result->id, result->name, "alpha");

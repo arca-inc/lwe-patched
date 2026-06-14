@@ -920,6 +920,10 @@ static JSValue jsGetTextureAnimation (JSContext* ctx, JSValueConst, int, JSValue
     return animation;
 }
 
+static JSValue jsGetParticleEmitters (JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    return JS_GetPropertyStr (ctx, this_val, "__emitters");
+}
+
 static void syncLayerObjectProperties (JSContext* ctx, JSValue layer, const Object& object) {
     JS_SetPropertyStr (ctx, layer, "id", JS_NewInt32 (ctx, object.id));
     JS_SetPropertyStr (ctx, layer, "name", JS_NewString (ctx, object.name.c_str ()));
@@ -938,6 +942,23 @@ static void syncLayerObjectProperties (JSContext* ctx, JSValue layer, const Obje
 	JS_SetPropertyStr (ctx, layer, "volume", JS_NewFloat64 (ctx, 1.0));
 	JS_SetPropertyStr (ctx, layer, "play", JS_NewCFunction (ctx, jsNoop, "play", 0));
 	JS_SetPropertyStr (ctx, layer, "stop", JS_NewCFunction (ctx, jsNoop, "stop", 0));
+    }
+
+    if (object.is<Particle> ()) {
+	const auto& particle = *object.as<Particle> ();
+	JSValue emitters = JS_NewArray (ctx);
+	for (size_t i = 0; i < particle.emitters.size (); ++i) {
+	    JSValue emitter = JS_NewObject (ctx);
+	    JS_SetPropertyStr (ctx, emitter, "name", JS_NewString (ctx, particle.emitters[i].name.c_str ()));
+	    JS_SetPropertyStr (ctx, emitter, "distancemin", constructVectorObject (ctx, "Vec3", { particle.emitters[i].distanceMin.x, particle.emitters[i].distanceMin.y, particle.emitters[i].distanceMin.z }));
+	    JS_SetPropertyStr (ctx, emitter, "distancemax", constructVectorObject (ctx, "Vec3", { particle.emitters[i].distanceMax.x, particle.emitters[i].distanceMax.y, particle.emitters[i].distanceMax.z }));
+	    JS_SetPropertyStr (ctx, emitter, "origin", constructVectorObject (ctx, "Vec3", { particle.emitters[i].origin.x, particle.emitters[i].origin.y, particle.emitters[i].origin.z }));
+	    JS_SetPropertyStr (ctx, emitter, "directions", constructVectorObject (ctx, "Vec3", { particle.emitters[i].directions.x, particle.emitters[i].directions.y, particle.emitters[i].directions.z }));
+	    JS_SetPropertyUint32 (ctx, emitters, i, emitter);
+	}
+	JS_SetPropertyStr (ctx, layer, "__emitters", emitters);
+	JS_SetPropertyStr (ctx, layer, "getParticleEmitters", JS_NewCFunction (ctx, jsGetParticleEmitters, "getParticleEmitters", 0));
+	JS_SetPropertyStr (ctx, layer, "getEmitters", JS_NewCFunction (ctx, jsGetParticleEmitters, "getEmitters", 0));
     }
 }
 

@@ -1,5 +1,6 @@
 #include "CText.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <vector>
 
@@ -28,8 +29,62 @@ const std::vector<std::string> kFontCandidates = {
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/TTF/DejaVuSans.ttf",
     "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/dejavu-fonts/DejaVuSans.ttf",
     "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    "/usr/share/fonts/liberation-fonts/LiberationSans-Regular.ttf",
+    "/usr/share/fonts/liberation/LiberationSans-Regular.ttf",
+    "/usr/share/fonts/noto/NotoSans-Regular.ttf",
 };
+
+// Roots scanned recursively when none of the explicit candidates exist, so the
+// fallback works regardless of distro layout (Gentoo, Arch, Fedora, …).
+const std::vector<std::string> kFontRoots = {
+    "/usr/share/fonts",
+    "/usr/local/share/fonts",
+    "/run/current-system/sw/share/X11/fonts", // NixOS
+};
+
+// Picks the first usable regular .ttf/.otf, preferring well-known sans families
+// and avoiding bold/italic/symbol/emoji faces.
+std::string scanForSystemFont () {
+    std::string best;
+    int bestScore = -1;
+    for (const auto& root : kFontRoots) {
+	std::error_code ec;
+	if (!std::filesystem::is_directory (root, ec))
+	    continue;
+	for (auto it = std::filesystem::recursive_directory_iterator (
+		 root, std::filesystem::directory_options::skip_permission_denied, ec);
+	     !ec && it != std::filesystem::recursive_directory_iterator (); it.increment (ec)) {
+	    if (!it->is_regular_file (ec))
+		continue;
+	    auto ext = it->path ().extension ().string ();
+	    std::transform (ext.begin (), ext.end (), ext.begin (), ::tolower);
+	    if (ext != ".ttf" && ext != ".otf")
+		continue;
+	    std::string name = it->path ().filename ().string ();
+	    std::string lower = name;
+	    std::transform (lower.begin (), lower.end (), lower.begin (), ::tolower);
+	    if (lower.find ("bold") != std::string::npos || lower.find ("italic") != std::string::npos
+		|| lower.find ("oblique") != std::string::npos || lower.find ("symbol") != std::string::npos
+		|| lower.find ("emoji") != std::string::npos || lower.find ("nerd") != std::string::npos)
+		continue;
+	    int score = 0;
+	    if (lower.find ("dejavusans") != std::string::npos) score = 100;
+	    else if (lower.find ("liberationsans") != std::string::npos) score = 90;
+	    else if (lower.find ("notosans") != std::string::npos) score = 80;
+	    else if (lower.find ("sans") != std::string::npos) score = 50;
+	    else score = 10;
+	    if (score > bestScore) {
+		bestScore = score;
+		best = it->path ().string ();
+		if (score >= 90)
+		    return best; // good enough, stop early
+	    }
+	}
+    }
+    return best;
+}
 
 const char* kVertexShader = R"glsl(
 #version 330 core
@@ -157,6 +212,10 @@ bool CText::loadSystemFont () {
 	    break;
 	}
     }
+    // None of the well-known paths exist (e.g. Gentoo/Nix layouts): scan the
+    // font directories for any usable face before giving up.
+    if (fontPath.empty ())
+	fontPath = scanForSystemFont ();
     if (fontPath.empty ()) {
 	sLog.error ("CText: no usable system font found");
 	return false;

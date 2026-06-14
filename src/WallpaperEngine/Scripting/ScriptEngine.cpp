@@ -467,6 +467,18 @@ static void logJSException (JSContext* ctx, const char* context) {
 	    sLog.error ("ScriptEngine [", context, "]: ", str);
 	    JS_FreeCString (ctx, str);
 	}
+	// also surface the JS stack so we know which call actually failed
+	if (JS_IsObject (exc)) {
+	    JSValue stack = JS_GetPropertyStr (ctx, exc, "stack");
+	    if (!JS_IsUndefined (stack)) {
+		const char* stackStr = JS_ToCString (ctx, stack);
+		if (stackStr && *stackStr) {
+		    sLog.error ("ScriptEngine [", context, "] stack: ", stackStr);
+		    JS_FreeCString (ctx, stackStr);
+		}
+	    }
+	    JS_FreeValue (ctx, stack);
+	}
     }
     JS_FreeValue (ctx, exc);
 }
@@ -675,6 +687,12 @@ globalThis.WEVector = {
   }
 };
 globalThis.WEColor = {
+  normalizeColor(c) {
+    if (c == null) return new Vec3(0, 0, 0);
+    const x = (Number(c.x) || 0) / 255, y = (Number(c.y) || 0) / 255, z = (Number(c.z) || 0) / 255;
+    if (c.w !== undefined) return new Vec4(x, y, z, (Number(c.w) || 0) / 255);
+    return new Vec3(x, y, z);
+  },
   rgb2hsv(c) {
     const r = c.x, g = c.y, b = c.z, max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
     let h = 0;

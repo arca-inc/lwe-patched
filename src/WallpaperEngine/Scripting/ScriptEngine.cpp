@@ -23,6 +23,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <vector>
+#include <regex>
 
 using namespace WallpaperEngine::Scripting;
 using namespace WallpaperEngine::Data::Model;
@@ -829,10 +830,7 @@ JSValue ScriptEngine::ensureModule (const void* bindingKey, const std::string& s
     };
     removeAll ("'use strict';");
     removeAll ("\"use strict\";");
-    removeAll ("import * as WEColor from 'WEColor';");
-    removeAll ("import * as WEColor from \"WEColor\";");
-    removeAll ("import * as WEMath from 'WEMath';");
-    removeAll ("import * as WEMath from \"WEMath\";");
+    body = std::regex_replace (body, std::regex (R"((?:^|\n)\s*import\s+[^;\n]+;?)"), "");
     while ((pos = body.find ("export ")) != std::string::npos) body.erase (pos, 7);
 
     std::ostringstream wrapper;
@@ -1584,6 +1582,7 @@ ScriptLayerHandle ScriptEngine::createLayerScript (
     while ((pos = body.find ("\"use strict\";")) != std::string::npos) {
 	body.erase (pos, 13);
     }
+    body = std::regex_replace (body, std::regex (R"((?:^|\n)\s*import\s+[^;\n]+;?)"), "");
     while ((pos = body.find ("export ")) != std::string::npos) {
 	body.erase (pos, 7);
     }

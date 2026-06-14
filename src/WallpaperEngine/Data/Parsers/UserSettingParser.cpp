@@ -5,6 +5,9 @@
 #include "WallpaperEngine/Data/Model/UserSetting.h"
 #include "WallpaperEngine/Logging/Log.h"
 
+#include <cstdlib>
+#include <sstream>
+
 using namespace WallpaperEngine::Data::Parsers;
 using namespace WallpaperEngine::Data::Builders;
 
@@ -52,24 +55,38 @@ UserSettingUniquePtr UserSettingParser::parse (const json& data, const Propertie
     // actual value parsing
     if (valueIt.is_string ()) {
 	std::string str = valueIt;
+	const int size = VectorBuilder::preparseSize (str);
 
-	// TODO: VALIDATE THIS IS RIGHT?
-	if (int size = VectorBuilder::preparseSize (str); size == 1) {
-	    size_t parsed = 0;
-	    const float scalar = std::stof (str, &parsed);
-	    if (parsed != str.size ()) {
-		sLog.exception ("Invalid scalar format: ", str);
+	// A spaced string is only a vector when every whitespace-separated token is
+	// numeric. Names like "Media Rigth" contain spaces but are plain strings; the
+	// old code parsed them as vec2 (strtof yields 0 for non-numbers), turning a
+	// string scriptProperty into a Vec object and breaking script `.trim()` calls.
+	const auto isNumericVector = [&str] () {
+	    std::istringstream iss (str);
+	    std::string token;
+	    bool any = false;
+	    while (iss >> token) {
+		any = true;
+		char* end = nullptr;
+		std::strtod (token.c_str (), &end);
+		if (end == token.c_str () || *end != '\0') {
+		    return false;
+		}
 	    }
-	    value->update (scalar);
-	} else if (size == 2) {
-	    value->update (static_cast<glm::vec2> (valueIt));
-	} else if (size == 3) {
-	    value->update (static_cast<glm::vec3> (valueIt));
-	} else if (size == 4) {
-	    value->update (static_cast<glm::vec4> (valueIt));
+	    return any;
+	};
+
+	if (size >= 2 && isNumericVector ()) {
+	    if (size == 2) {
+		value->update (static_cast<glm::vec2> (valueIt));
+	    } else if (size == 3) {
+		value->update (static_cast<glm::vec3> (valueIt));
+	    } else {
+		value->update (static_cast<glm::vec4> (valueIt));
+	    }
 	} else {
-	    // preparseSize returned 0: no spaces found — try parsing as a scalar float,
-	    // fall back to a plain string for non-numeric values (e.g. "bottom", "center").
+	    // single token, or a spaced string that isn't numeric: parse as a scalar
+	    // float when possible, otherwise keep it as a plain string (e.g. "bottom").
 	    std::size_t parsed = 0;
 	    try {
 		float f = std::stof (str, &parsed);

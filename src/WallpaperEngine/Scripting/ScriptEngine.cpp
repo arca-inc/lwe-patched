@@ -1,3 +1,4 @@
+#include <fstream>
 #include <iostream>
 #include "ScriptEngine.h"
 #include "WallpaperEngine/Audio/AudioContext.h"
@@ -785,7 +786,7 @@ globalThis.__weRunIntervals = function(bindingKey) {
     interval.callback();
   }
 };
-globalThis.__missingLayer = { origin: new Vec3(0, 0, 0), scale: new Vec3(1, 1, 1), angles: new Vec3(0, 0, 0), visible: false, alpha: 0, color: new Vec4(0, 0, 0, 0), parallaxDepth: new Vec2(0, 0) };
+globalThis.__missingLayer = { origin: new Vec3(0, 0, 0), scale: new Vec3(1, 1, 1), angles: new Vec3(0, 0, 0), visible: false, alpha: 0, color: new Vec4(0, 0, 0, 0), parallaxDepth: new Vec2(0, 0), getParent() { return globalThis.__missingLayer; } };
 globalThis.engine = {
   runtime: 0,
   frametime: 0,
@@ -829,7 +830,8 @@ globalThis.thisScene = {
       alpha: 1,
       visible: true,
       alignment: 0,
-      color: typeof Vec3 !== 'undefined' ? new Vec3(1,1,1) : {x:1, y:1, z:1}
+      color: typeof Vec3 !== 'undefined' ? new Vec3(1,1,1) : {x:1, y:1, z:1},
+      getParent() { return globalThis.__missingLayer; }
     };
   },
   getLayerIndex(layer) {
@@ -897,6 +899,11 @@ JSValue ScriptEngine::ensureModule (const void* bindingKey, const std::string& s
 	    << "})();\n";
 
     const std::string source = wrapper.str ();
+    if (const char* dbg = getenv ("LWE_DUMP_SCRIPTS"); dbg != nullptr) {
+	static int dumpIdx = 0;
+	std::ofstream f ("/tmp/lwe_module_" + std::to_string (dumpIdx++) + ".js");
+	f << source;
+    }
     JSValue module = JS_Eval (this->m_context, source.c_str (), source.size (), "<scene-script-module>", JS_EVAL_TYPE_GLOBAL);
     if (JS_IsException (module)) {
 	logJSException (this->m_context, "module");
@@ -1033,9 +1040,38 @@ static void syncLayerObjectProperties (JSContext* ctx, JSValue layer, const Obje
     }
 }
 
+// thisLayer.getParent(): resolves the parent layer via the hidden __parentId set in
+// buildLayerObject, looking it up in globalThis.__layers. Falls back to the shared
+// __missingLayer so scripts that always call getParent() never hit "not a function".
+static JSValue jsLayerGetParent (JSContext* ctx, JSValueConst this_val, int, JSValueConst*) {
+    JSValue global = JS_GetGlobalObject (ctx);
+    JSValue layers = JS_GetPropertyStr (ctx, global, "__layers");
+    JSValue parentIdVal = JS_GetPropertyStr (ctx, this_val, "__parentId");
+    int32_t parentId = -1;
+    JS_ToInt32 (ctx, &parentId, parentIdVal);
+    JS_FreeValue (ctx, parentIdVal);
+
+    JSValue result = JS_UNDEFINED;
+    if (parentId >= 0 && JS_IsObject (layers)) {
+	result = JS_GetPropertyStr (ctx, layers, std::to_string (parentId).c_str ());
+    }
+    if (!JS_IsObject (result)) {
+	JS_FreeValue (ctx, result);
+	result = JS_GetPropertyStr (ctx, global, "__missingLayer");
+    }
+    JS_FreeValue (ctx, layers);
+    JS_FreeValue (ctx, global);
+    return result;
+}
+
 static JSValue buildLayerObject (JSContext* ctx, const Object& object) {
     JSValue layer = JS_NewObject (ctx);
     syncLayerObjectProperties (ctx, layer, object);
+
+    if (object.parent.has_value ()) {
+	JS_SetPropertyStr (ctx, layer, "__parentId", JS_NewInt32 (ctx, *object.parent));
+    }
+    JS_SetPropertyStr (ctx, layer, "getParent", JS_NewCFunction (ctx, jsLayerGetParent, "getParent", 0));
 
     return layer;
 }

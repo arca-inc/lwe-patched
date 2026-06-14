@@ -28,8 +28,8 @@ Render::CObject* createImageObject (CScene& scene, const Image& imageData) {
     auto* image = new Objects::CImage (scene, imageData);
     try {
 	image->setup ();
-    } catch (std::runtime_error&) {
-	sLog.error ("Cannot setup image ", image->getImage ().name);
+    } catch (std::runtime_error& e) {
+	sLog.error ("Cannot setup image ", image->getImage ().name, ": ", e.what ());
 	delete image;
 	return nullptr;
     }

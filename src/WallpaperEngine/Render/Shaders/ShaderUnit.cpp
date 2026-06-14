@@ -1,6 +1,7 @@
 #include "ShaderUnit.h"
 
 #include "WallpaperEngine/Logging/Log.h"
+#include <algorithm>
 #include <exception>
 #include <regex>
 #include <stack>
@@ -419,18 +420,37 @@ std::string ShaderUnit::applyFragmentTexCoordCompatibility (std::string source) 
 	return source;
     }
 
-    const std::regex texCoordBeforeCast2 (R"(\bv_TexCoord\b(\s*[-+*/]\s*CAST2\s*\())");
-    const std::regex cast2BeforeTexCoord (R"((CAST2\s*\([^)]+\)\s*[-+*/]\s*)\bv_TexCoord\b)");
+    // Determine the v_TexCoord varying width on both sides. WE shaders frequently
+    // declare it as vec2 in the fragment but vec4 in the vertex; the GL linker then
+    // widens the fragment input to vec4 to match the vertex output, which turns a
+    // plain `vec2 x = v_TexCoord;` into an illegal implicit vec4->vec2 cast (C7011).
+    const std::regex texCoordDecl (R"(\bvarying\s+vec([234])\s+v_TexCoord\s*;)");
+    std::smatch widthMatch;
+    int fragWidth = 0;
+    if (std::regex_search (source, widthMatch, texCoordDecl))
+	fragWidth = std::stoi (widthMatch[1].str ());
+    int vertWidth = 0;
+    if (this->m_link != nullptr && std::regex_search (this->m_link->m_preprocessed, widthMatch, texCoordDecl))
+	vertWidth = std::stoi (widthMatch[1].str ());
 
-    const std::regex wideTexCoordDecl (R"(\bvarying\s+vec[34]\s+v_TexCoord\s*;)");
-    if (!std::regex_search (source, wideTexCoordDecl)) {
+    // Nothing to reconcile when v_TexCoord is vec2 on both sides.
+    if (std::max (fragWidth, vertWidth) < 3) {
 	return source;
     }
 
+    const std::regex texCoordBeforeCast2 (R"(\bv_TexCoord\b(\s*[-+*/]\s*CAST2\s*\())");
+    const std::regex cast2BeforeTexCoord (R"((CAST2\s*\([^)]+\)\s*[-+*/]\s*)\bv_TexCoord\b)");
+
     const std::string original = source;
+    // Make the fragment declaration match the wider interface so glslang and the GL
+    // linker agree on the type before we narrow the individual uses below.
+    if (fragWidth != 0 && fragWidth < vertWidth) {
+	source = std::regex_replace (
+	    source, texCoordDecl, "varying vec" + std::to_string (vertWidth) + " v_TexCoord;");
+    }
     source = std::regex_replace (source, texCoordBeforeCast2, "v_TexCoord.xy$1");
     source = std::regex_replace (source, cast2BeforeTexCoord, "$1v_TexCoord.xy");
-    
+
     const std::regex implicitVec2Assign (R"(\b(vec2\s+[A-Za-z0-9_]+\s*=\s*)v_TexCoord\s*;)");
     source = std::regex_replace (source, implicitVec2Assign, "$1v_TexCoord.xy;");
     const std::regex implicitVec3Assign (R"(\b(vec3\s+[A-Za-z0-9_]+\s*=\s*)v_TexCoord\s*;)");

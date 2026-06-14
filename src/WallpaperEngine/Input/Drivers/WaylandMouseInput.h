@@ -7,6 +7,8 @@
 #include <glm/vec2.hpp>
 #include <chrono>
 #include <optional>
+#include <thread>
+#include <atomic>
 
 namespace WallpaperEngine::Render::Drivers {
 class WaylandOpenGLDriver;
@@ -19,6 +21,7 @@ namespace WallpaperEngine::Input::Drivers {
 class WaylandMouseInput final : public MouseInput {
 public:
     explicit WaylandMouseInput (const WallpaperEngine::Render::Drivers::WaylandOpenGLDriver& driver);
+    ~WaylandMouseInput() override;
 
     /**
      * Takes current mouse position and updates it
@@ -49,7 +52,11 @@ private:
     const WallpaperEngine::Render::Drivers::WaylandOpenGLDriver& m_waylandDriver;
 
     glm::dvec2 m_pos = {};
-    std::chrono::steady_clock::time_point m_lastHyprlandQuery = {};
+
+    std::atomic<bool> m_running;
+    std::atomic<double> m_cursorX;
+    std::atomic<double> m_cursorY;
+    std::thread m_pollingThread;
 };
 } // namespace WallpaperEngine::Input::Drivers
 

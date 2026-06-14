@@ -32,7 +32,25 @@ const WallpaperEngine::Render::Drivers::Output::WaylandOutputViewport* getActive
 }
 
 WaylandMouseInput::WaylandMouseInput (const WallpaperEngine::Render::Drivers::WaylandOpenGLDriver& driver) :
-    m_waylandDriver (driver) { }
+    m_waylandDriver (driver), m_running (true), m_cursorX (0.0), m_cursorY (0.0) {
+    
+    this->m_pollingThread = std::thread ([this] () {
+        while (this->m_running) {
+            if (auto cursor = this->queryHyprlandCursorPosition ()) {
+                this->m_cursorX.store (cursor->x, std::memory_order_relaxed);
+                this->m_cursorY.store (cursor->y, std::memory_order_relaxed);
+            }
+            std::this_thread::sleep_for (std::chrono::milliseconds (16));
+        }
+    });
+}
+
+WaylandMouseInput::~WaylandMouseInput () {
+    this->m_running = false;
+    if (this->m_pollingThread.joinable ()) {
+        this->m_pollingThread.join ();
+    }
+}
 
 void WaylandMouseInput::update () {
     if (!this->m_waylandDriver.getApp ().getContext ().settings.mouse.enabled) {
@@ -45,25 +63,16 @@ void WaylandMouseInput::update () {
 	return;
     }
 
-    const auto now = std::chrono::steady_clock::now ();
-    if (now - this->m_lastHyprlandQuery < std::chrono::milliseconds (16)) {
-	return;
-    }
-    this->m_lastHyprlandQuery = now;
-
-    const auto globalCursor = this->queryHyprlandCursorPosition ();
-    if (!globalCursor.has_value ()) {
-	this->m_pos = { 0, 0 };
-	return;
-    }
+    glm::dvec2 globalCursor = { this->m_cursorX.load (std::memory_order_relaxed),
+                                this->m_cursorY.load (std::memory_order_relaxed) };
 
     for (const auto* viewport : this->m_waylandDriver.m_screens) {
 	if (!viewport || viewport->size.x <= 0 || viewport->size.y <= 0) {
 	    continue;
 	}
 
-	const double localX = globalCursor->x - viewport->position.x;
-	const double localY = globalCursor->y - viewport->position.y;
+	const double localX = globalCursor.x - viewport->position.x;
+	const double localY = globalCursor.y - viewport->position.y;
 	if (localX < 0.0 || localY < 0.0 || localX > viewport->size.x || localY > viewport->size.y) {
 	    continue;
 	}

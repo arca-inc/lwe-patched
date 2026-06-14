@@ -26,7 +26,7 @@ SceneUniquePtr WallpaperParser::parseScene (const JSON& file, Project& project) 
     const auto camera = scene.require ("camera", "Scenes must have a camera section");
     const auto general = scene.require ("general", "Scenes must have a general section");
     const auto projection
-	= general.require ("orthogonalprojection", "General section must have orthogonal projection info");
+	= general.optional ("orthogonalprojection", JSON::object());
     const auto objects = scene.require ("objects", "Scenes must have an objects section");
     const auto& properties = project.properties;
 
@@ -69,9 +69,9 @@ SceneUniquePtr WallpaperParser::parseScene (const JSON& file, Project& project) 
                     .up = camera.require <glm::vec3> ("up", "Camera must have an up position"),
                 },
                 .projection = {
-                    .width  = projection.optional ("auto", false) ? 0 : projection.require <int> ("width",  "Projection must have a width"),
-                    .height = projection.optional ("auto", false) ? 0 : projection.require <int> ("height", "Projection must have a height"),
-                    .isAuto = projection.optional ("auto", false),
+                    .width  = projection.optional ("auto", false) ? 0 : projection.optional <int> ("width", 0),
+                    .height = projection.optional ("auto", false) ? 0 : projection.optional <int> ("height", 0),
+                    .isAuto = projection.optional ("auto", projection.optional <int> ("width", 0) == 0),
                     .nearz = camera.optional <float> ("nearz", 0.0f),
                     .farz = camera.optional <float> ("farz", 1000.0f),
                     .fov = camera.optional <float> ("fov", 50.0f)

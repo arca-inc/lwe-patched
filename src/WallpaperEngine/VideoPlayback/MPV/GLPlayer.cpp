@@ -221,7 +221,10 @@ void GLPlayer::init () {
     // setup mpv options for playback
     mpv_set_option_string (this->m_handle, "terminal", "yes");
 #if NDEBUG
-    mpv_set_option_string (this->m_handle, "msg-level", "all=status,statusline=no");
+    // ffmpeg=fatal silences libav's harmless self-warnings routed through mpv
+    // ("This is a bug in one of FFmpeg libraries used", "av_log callback called
+    // with bad parameters (NULL AVClass)") that otherwise print once per video.
+    mpv_set_option_string (this->m_handle, "msg-level", "all=status,statusline=no,ffmpeg=fatal");
 #else
     mpv_set_option_string (this->m_handle, "msg-level", "all=v");
 #endif

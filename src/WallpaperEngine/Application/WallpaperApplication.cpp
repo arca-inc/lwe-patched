@@ -524,7 +524,9 @@ void WallpaperApplication::setupPropertiesForProject (const Project& project) {
 	auto override = this->m_context.settings.general.properties.find (key);
 
 	if (override != this->m_context.settings.general.properties.end ()) {
-	    sLog.out ("Applying override value for ", key);
+	    // debug-level: preset wallpapers override 100+ properties, flooding the
+	    // normal log with one line each.
+	    sLog.debug ("Applying override value for ", key);
 
 	    cur->update (override->second);
 	}

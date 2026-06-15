@@ -786,10 +786,11 @@ globalThis.__weRunIntervals = function(bindingKey) {
     interval.callback();
   }
 };
-globalThis.__missingLayer = { origin: new Vec3(0, 0, 0), scale: new Vec3(1, 1, 1), angles: new Vec3(0, 0, 0), visible: false, alpha: 0, color: new Vec4(0, 0, 0, 0), parallaxDepth: new Vec2(0, 0), getParent() { return globalThis.__missingLayer; } };
+globalThis.__missingLayer = { origin: new Vec3(0, 0, 0), scale: new Vec3(1, 1, 1), angles: new Vec3(0, 0, 0), size: new Vec2(0, 0), visible: false, alpha: 0, color: new Vec4(0, 0, 0, 0), parallaxDepth: new Vec2(0, 0), getParent() { return globalThis.__missingLayer; } };
 globalThis.engine = {
   runtime: 0,
   frametime: 0,
+  screenResolution: new Vec2(0, 0),
   AUDIO_RESOLUTION_16: 16,
   AUDIO_RESOLUTION_32: 32,
   AUDIO_RESOLUTION_64: 64,
@@ -826,6 +827,7 @@ globalThis.thisScene = {
       origin: typeof Vec3 !== 'undefined' ? new Vec3(0,0,0) : {x:0, y:0, z:0},
       scale: typeof Vec3 !== 'undefined' ? new Vec3(1,1,1) : {x:1, y:1, z:1},
       angles: typeof Vec3 !== 'undefined' ? new Vec3(0,0,0) : {x:0, y:0, z:0},
+      size: typeof Vec2 !== 'undefined' ? new Vec2(0,0) : {x:0, y:0},
       parallaxDepth: typeof Vec2 !== 'undefined' ? new Vec2(0,0) : {x:0, y:0},
       alpha: 1,
       visible: true,
@@ -998,6 +1000,18 @@ static void syncLayerObjectProperties (JSContext* ctx, JSValue layer, const Obje
 	if (const auto* setting = settingForProperty (object, property); setting && setting->value) {
 	    setObjectPropertyFromDynamicValue (ctx, layer, property, *setting->value);
 	}
+    }
+
+    // thisLayer.size — the layer's natural pixel size. Scene scripts read it
+    // (e.g. shared.getScaleBackground(thisLayer.size)); leaving it undefined makes
+    // those scripts throw "cannot read property 'x' of undefined" every frame.
+    JS_SetPropertyStr (ctx, layer, "size", constructVectorObject (ctx, "Vec2", { 0, 0 }));
+    if (object.is<Image> ()) {
+	const auto& size = object.as<Image> ()->size;
+	JS_SetPropertyStr (ctx, layer, "size", constructVectorObject (ctx, "Vec2", { size.x, size.y }));
+    } else if (object.is<Text> ()) {
+	const auto& size = object.as<Text> ()->size;
+	JS_SetPropertyStr (ctx, layer, "size", constructVectorObject (ctx, "Vec2", { size.x, size.y }));
     }
 
     if (object.is<Sound> ()) {
@@ -1455,6 +1469,17 @@ void ScriptEngine::updateSceneInputGlobals (JSContext* ctx, JSValue globalObj, W
     updateAudioArray (ctx, globalObj, "__audio16", recorder.audio16, 16);
     updateAudioArray (ctx, globalObj, "__audio32", recorder.audio32, 32);
     updateAudioArray (ctx, globalObj, "__audio64", recorder.audio64, 64);
+
+    // engine.screenResolution: scene scripts (e.g. resolution-scaling helpers)
+    // read engine.screenResolution.x/.y; without it the access throws
+    // "cannot read property 'x' of undefined" and aborts init/update.
+    JSValue engineObj = JS_GetPropertyStr (ctx, globalObj, "engine");
+    if (!JS_IsUndefined (engineObj) && !JS_IsException (engineObj)) {
+	DynamicValue screenRes;
+	screenRes.update (glm::vec2 (scene->getWidth (), scene->getHeight ()));
+	JS_SetPropertyStr (ctx, engineObj, "screenResolution", this->dynamicValueToJS (screenRes));
+    }
+    JS_FreeValue (ctx, engineObj);
 
     JSValue input = JS_GetPropertyStr (ctx, globalObj, "input");
     if (JS_IsUndefined (input) || JS_IsException (input)) {

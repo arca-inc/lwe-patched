@@ -156,11 +156,13 @@ void GLPlayer::render () const {
 	this->m_height = height;
 	// reconfigure the texture
 	glBindTexture (GL_TEXTURE_2D, this->m_outputTexture);
-	glTexImage2D (GL_TEXTURE_2D, 0, GL_RGBA8, this->m_width, this->m_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+	glTexImage2D (
+	    GL_TEXTURE_2D, 0, GL_RGBA8, static_cast<GLsizei> (this->m_width), static_cast<GLsizei> (this->m_height), 0,
+	    GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
     }
 
     // render the next
-    glViewport (0, 0, this->m_width, this->m_height);
+    glViewport (0, 0, static_cast<GLsizei> (this->m_width), static_cast<GLsizei> (this->m_height));
 
     mpv_opengl_fbo fbo { static_cast<int> (this->m_fbo), static_cast<int> (this->m_width),
 			 static_cast<int> (this->m_height), GL_RGBA8 };
@@ -181,8 +183,8 @@ void GLPlayer::render () const {
     mpv_render_context_render (this->m_renderContext, params);
 }
 
-int GLPlayer::getWidth () const { return this->m_width; }
-int GLPlayer::getHeight () const { return this->m_height; }
+int GLPlayer::getWidth () const { return static_cast<int> (this->m_width); }
+int GLPlayer::getHeight () const { return static_cast<int> (this->m_height); }
 
 void GLPlayer::prepareGL () {
     if (!this->m_doWeOwnFramebuffer || this->m_fbo != GL_NONE) {
@@ -193,7 +195,9 @@ void GLPlayer::prepareGL () {
     glBindFramebuffer (GL_FRAMEBUFFER, this->m_fbo);
     glBindTexture (GL_TEXTURE_2D, this->m_outputTexture);
     // reset texture's contents
-    glTexImage2D (GL_TEXTURE_2D, 0, GL_RGBA8, this->m_width, this->m_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexImage2D (
+	GL_TEXTURE_2D, 0, GL_RGBA8, static_cast<GLsizei> (this->m_width), static_cast<GLsizei> (this->m_height), 0,
+	GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
     constexpr GLenum drawBuffers[1] = { GL_COLOR_ATTACHMENT0 };
     glFramebufferTexture2D (GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, this->m_outputTexture, 0);
     glDrawBuffers (1, drawBuffers);

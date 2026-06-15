@@ -172,6 +172,12 @@ void GLPlayer::render () const {
 				  { MPV_RENDER_PARAM_FLIP_Y, &flip_y },
 				  { MPV_RENDER_PARAM_INVALID, nullptr } };
 
+    // Drain any pending GL error left by previous wallpaper rendering in this
+    // frame. libmpv's GL interop checks glGetError() right after creating its
+    // texture and logs a misleading "after creating texture: OpenGL error
+    // INVALID_OPERATION" for an error it merely inherited, not one it caused.
+    while (glGetError () != GL_NO_ERROR) { }
+
     mpv_render_context_render (this->m_renderContext, params);
 }
 

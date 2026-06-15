@@ -369,6 +369,7 @@ set(COMMON_SOURCES
     src/WallpaperEngine/Render/Shaders/Shader.h
     src/WallpaperEngine/Render/Shaders/Shader.cpp
     src/WallpaperEngine/Render/Shaders/ShaderUnit.cpp
+    src/WallpaperEngine/Render/Shaders/ShaderCache.cpp
     src/WallpaperEngine/Render/Shaders/ShaderUnit.h
     src/WallpaperEngine/Render/Shaders/GLSLContext.cpp
     src/WallpaperEngine/Render/Shaders/GLSLContext.h

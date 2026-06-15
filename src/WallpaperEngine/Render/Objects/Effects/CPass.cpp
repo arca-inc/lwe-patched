@@ -10,6 +10,7 @@
 #include "WallpaperEngine/Render/CFBO.h"
 #include "WallpaperEngine/Render/Objects/CImage.h"
 
+#include "WallpaperEngine/Render/Shaders/ShaderCache.h"
 #include "WallpaperEngine/Render/Shaders/Variables/ShaderVariable.h"
 #include "WallpaperEngine/Render/Shaders/Variables/ShaderVariableFloat.h"
 #include "WallpaperEngine/Render/Shaders/Variables/ShaderVariableInteger.h"
@@ -577,53 +578,66 @@ void CPass::setupShaders () {
 	passTextures, this->m_override.textures, this->m_override.constants
     );
 
-    const auto [vertex, fragment]
-	= Shaders::GLSLContext::get ().toGlsl (this->m_shader->vertex (), this->m_shader->fragment ());
+    // Use ShaderUnit::compile() output as the cache key — it embeds the filename
+    // header and all combo #defines, so it is a complete fingerprint of the
+    // compilation inputs. On a cache hit we skip both glslang and GPU compilation.
+    const std::string& vertPreGlsl = this->m_shader->vertex ();
+    const std::string& fragPreGlsl = this->m_shader->fragment ();
 
-    // compile the shaders
-    const GLuint vertexShaderID = compileShader (vertex.c_str (), GL_VERTEX_SHADER);
-    const GLuint fragmentShaderID = compileShader (fragment.c_str (), GL_FRAGMENT_SHADER);
-    // create the final program
-    this->m_programID = glCreateProgram ();
-    // link the shaders together
-    glAttachShader (this->m_programID, vertexShaderID);
-    glAttachShader (this->m_programID, fragmentShaderID);
-    glLinkProgram (this->m_programID);
-    // check that the shader was properly linked
-    GLint result = GL_FALSE;
-    int infoLogLength = 0;
+    if (Shaders::ShaderCache::tryLoad (vertPreGlsl, fragPreGlsl, this->m_programID)) {
+	// Cache hit: program binary loaded, skip everything below
+    } else {
+	// Cache miss: full compilation pipeline
+	const auto [vertex, fragment]
+	    = Shaders::GLSLContext::get ().toGlsl (vertPreGlsl, fragPreGlsl);
 
-    glGetProgramiv (this->m_programID, GL_LINK_STATUS, &result);
-    glGetProgramiv (this->m_programID, GL_INFO_LOG_LENGTH, &infoLogLength);
+	// compile the shaders
+	const GLuint vertexShaderID = compileShader (vertex.c_str (), GL_VERTEX_SHADER);
+	const GLuint fragmentShaderID = compileShader (fragment.c_str (), GL_FRAGMENT_SHADER);
+	// create the final program
+	this->m_programID = glCreateProgram ();
+	// link the shaders together
+	glAttachShader (this->m_programID, vertexShaderID);
+	glAttachShader (this->m_programID, fragmentShaderID);
+	glLinkProgram (this->m_programID);
+	// check that the shader was properly linked
+	GLint result = GL_FALSE;
+	int infoLogLength = 0;
 
-    if (infoLogLength > 0) {
-	const auto logBuffer = new char[infoLogLength + 1];
-	// ensure logBuffer ends with a \0
-	memset (logBuffer, 0, infoLogLength + 1);
-	// get information about the error
-	glGetProgramInfoLog (this->m_programID, infoLogLength, nullptr, logBuffer);
-	// throw an exception about the issue
-	const std::string message = logBuffer;
-	// free the buffer
-	delete[] logBuffer;
-	if (result == GL_FALSE) {
-	    sLog.exception (message);
+	glGetProgramiv (this->m_programID, GL_LINK_STATUS, &result);
+	glGetProgramiv (this->m_programID, GL_INFO_LOG_LENGTH, &infoLogLength);
+
+	if (infoLogLength > 0) {
+	    const auto logBuffer = new char[infoLogLength + 1];
+	    // ensure logBuffer ends with a \0
+	    memset (logBuffer, 0, infoLogLength + 1);
+	    // get information about the error
+	    glGetProgramInfoLog (this->m_programID, infoLogLength, nullptr, logBuffer);
+	    // throw an exception about the issue
+	    const std::string message = logBuffer;
+	    // free the buffer
+	    delete[] logBuffer;
+	    if (result == GL_FALSE) {
+		sLog.exception (message);
+	    }
+	    // Link warnings are driver-specific and not actionable.
 	}
-	// Link warnings are driver-specific and not actionable.
-    }
 
 #if !NDEBUG
-    glObjectLabel (GL_PROGRAM, this->m_programID, -1, shaderName.c_str ());
-    glObjectLabel (GL_SHADER, vertexShaderID, -1, (shaderName + ".vert").c_str ());
-    glObjectLabel (GL_SHADER, fragmentShaderID, -1, (shaderName + ".frag").c_str ());
+	glObjectLabel (GL_PROGRAM, this->m_programID, -1, shaderName.c_str ());
+	glObjectLabel (GL_SHADER, vertexShaderID, -1, (shaderName + ".vert").c_str ());
+	glObjectLabel (GL_SHADER, fragmentShaderID, -1, (shaderName + ".frag").c_str ());
 #endif /* DEBUG */
 
-    // after being liked shaders can be dettached and deleted
-    glDetachShader (this->m_programID, vertexShaderID);
-    glDetachShader (this->m_programID, fragmentShaderID);
+	// after being linked shaders can be detached and deleted
+	glDetachShader (this->m_programID, vertexShaderID);
+	glDetachShader (this->m_programID, fragmentShaderID);
+	glDeleteShader (vertexShaderID);
+	glDeleteShader (fragmentShaderID);
 
-    glDeleteShader (vertexShaderID);
-    glDeleteShader (fragmentShaderID);
+	// Persist the linked program binary so next startup loads instantly
+	Shaders::ShaderCache::save (vertPreGlsl, fragPreGlsl, this->m_programID);
+    }
 
     // first setup the default values, these will be overwritten by future values
     this->setupShaderVariables ();

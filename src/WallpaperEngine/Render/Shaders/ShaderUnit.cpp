@@ -519,6 +519,8 @@ std::string ShaderUnit::injectMissingVaryings (std::string source) const {
     const std::string& vertSrc = this->m_link->m_preprocessed;
 
     std::string injected;
+    std::vector<std::string> seen;
+
     auto vit = std::sregex_iterator (vertSrc.cbegin (), vertSrc.cend (), vertexVaryingRe);
     const std::sregex_iterator vend;
     for (; vit != vend; ++vit) {
@@ -527,6 +529,8 @@ std::string ShaderUnit::injectMissingVaryings (std::string source) const {
 
 	// Skip known compatibility aliases introduced by our own preprocessing
 	if (name == "in" || name == "out") continue;
+	if (std::find (seen.begin (), seen.end (), name) != seen.end ()) continue;
+	seen.push_back (name);
 
 	// Check if this varying is already in the fragment shader
 	const std::regex fragHas ("\\bvarying\\s+\\w+\\s+" + name + "\\s*;");

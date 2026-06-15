@@ -9,39 +9,61 @@
 #include "WallpaperEngine/Data/Utils/MemoryStream.h"
 
 #include <algorithm>
+#include <cctype>
 
 using namespace WallpaperEngine::FileSystem;
 using namespace WallpaperEngine::FileSystem::Adapters;
 
+namespace {
+bool iequals (const std::string& a, const std::string& b) {
+    return a.size () == b.size ()
+	&& std::equal (a.begin (), a.end (), b.begin (), [] (unsigned char x, unsigned char y) {
+	       return std::tolower (x) == std::tolower (y);
+	   });
+}
+
+// Locate a package entry by name. Wallpaper Engine wallpapers are authored on
+// case-insensitive Windows, so a scene routinely references 'models/background.json'
+// while the package stores 'models/Background.json'. Try an exact match first (the
+// common, well-formed case), then fall back to a case-insensitive match so those
+// wallpapers load on Linux's case-sensitive filesystem instead of failing.
+template <typename Files>
+const WallpaperEngine::Data::Assets::FileEntry* findEntry (const Files& files, const std::string& name) {
+    for (const auto& file : files) {
+	if (file->filename == name) {
+	    return file.get ();
+	}
+    }
+    for (const auto& file : files) {
+	if (iequals (file->filename, name)) {
+	    return file.get ();
+	}
+    }
+    return nullptr;
+}
+} // namespace
+
 ReadStreamSharedPtr PackageAdapter::open (const std::filesystem::path& path) const {
     // find the file entry
-    const auto it = std::ranges::find_if (this->package->files, [&path] (const auto& file) {
-	return file->filename == path.string ();
-    });
+    const auto* entry = findEntry (this->package->files, path.string ());
 
-    if (it == this->package->files.end ()) {
+    if (entry == nullptr) {
 	throw std::filesystem::filesystem_error ("Cannot find file", path, std::error_code ());
     }
 
     // read file into memory
-    auto buffer = std::make_unique<char[]> (it->get ()->length);
+    auto buffer = std::make_unique<char[]> (entry->length);
 
     // go to the file's position and read into the buffer
-    this->package->file->base ().seekg (it->get ()->offset + this->package->baseOffset, std::ios::beg);
-    this->package->file->next (buffer.get (), it->get ()->length);
+    this->package->file->base ().seekg (entry->offset + this->package->baseOffset, std::ios::beg);
+    this->package->file->next (buffer.get (), entry->length);
 
     // create a memory stream and return that
-    return std::make_shared<MemoryStream> (std::move (buffer), it->get ()->length);
+    return std::make_shared<MemoryStream> (std::move (buffer), entry->length);
 }
 
 bool PackageAdapter::exists (const std::filesystem::path& path) const {
-    for (const auto& file : this->package->files) {
-	if (file->filename == path.string ()) {
-	    return true;
-	}
-    }
-
-    return false;
+    return findEntry (this->package->files, path.string ()) != nullptr;
 }
 
 std::filesystem::path PackageAdapter::physicalPath (const std::filesystem::path& path) const {

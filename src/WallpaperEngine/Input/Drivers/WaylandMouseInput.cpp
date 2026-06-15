@@ -2,6 +2,7 @@
 #include "WallpaperEngine/Render/Drivers/WaylandOpenGLDriver.h"
 #include <glm/common.hpp>
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <regex>
@@ -67,17 +68,43 @@ void WaylandMouseInput::update () {
                                 this->m_cursorY.load (std::memory_order_relaxed) };
 
     for (const auto* viewport : this->m_waylandDriver.m_screens) {
-	if (!viewport || viewport->size.x <= 0 || viewport->size.y <= 0) {
+	if (!viewport) {
 	    continue;
 	}
 
-	const double localX = globalCursor.x - viewport->position.x;
-	const double localY = globalCursor.y - viewport->position.y;
-	if (localX < 0.0 || localY < 0.0 || localX > viewport->size.x || localY > viewport->size.y) {
+	// Hyprland reports the cursor in the global *logical* coordinate space, so the
+	// per-output offset and bounds must use the output's logical position/size.
+	// (viewport->position is never populated — only globalPosition is, via the
+	// xdg-output/geometry handlers — which is why every output used to appear at
+	// (0,0) and the first one tall enough to contain the cursor was picked, mapping
+	// the Y against the wrong monitor height and reporting the cursor too low.)
+	const glm::ivec2 logicalSize
+	    = (viewport->logicalSize.x > 0 && viewport->logicalSize.y > 0) ? viewport->logicalSize : viewport->size;
+	if (logicalSize.x <= 0 || logicalSize.y <= 0) {
 	    continue;
 	}
 
-	this->m_pos = { localX * viewport->scale, (viewport->size.y - localY) * viewport->scale };
+	const double localX = globalCursor.x - viewport->globalPosition.x;
+	const double localY = globalCursor.y - viewport->globalPosition.y;
+	if (localX < 0.0 || localY < 0.0 || localX > logicalSize.x || localY > logicalSize.y) {
+	    continue;
+	}
+
+	// Normalize within this output, flip Y to GL's bottom-left origin, then express in
+	// physical framebuffer pixels (size * scale) to match the GL viewport downstream.
+	const double nx = localX / static_cast<double> (logicalSize.x);
+	const double ny = localY / static_cast<double> (logicalSize.y);
+	this->m_pos
+	    = { nx * viewport->size.x * viewport->scale, (1.0 - ny) * viewport->size.y * viewport->scale };
+	// Opt-in stderr trace (visible even under --silent) for diagnosing
+	// multi-monitor cursor mapping.
+	static const bool debugMouse = std::getenv ("LWE_DEBUG_MOUSE") != nullptr;
+	if (debugMouse) {
+	    fprintf (
+		stderr, "[mouse] global=(%.0f,%.0f) -> %s globalPos=(%d,%d) local=(%.0f,%.0f) m_pos=(%.0f,%.0f)\n",
+		globalCursor.x, globalCursor.y, viewport->name.c_str (), viewport->globalPosition.x,
+		viewport->globalPosition.y, localX, localY, this->m_pos.x, this->m_pos.y);
+	}
 	return;
     }
 

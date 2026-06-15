@@ -1664,6 +1664,11 @@ ScriptLayerHandle ScriptEngine::createLayerScript (
 	sLog.error ("ScriptEngine: No JS context available");
 	return kInvalidLayerHandle;
     }
+    // Ensure the global builtins (Vec2/Vec3/Vec4, WEMath, input, …) exist: a text
+    // layer script may run before any scene-property script, and without these the
+    // wrapper's `new Vec3(...)` falls back to plain objects (no .subtract/.add) and
+    // bare `input`/`WEMath` references throw.
+    this->installBuiltins ();
     this->ensureLayerRegistry ();
 
     JSContext* ctx = this->m_context;
@@ -1706,7 +1711,19 @@ ScriptLayerHandle ScriptEngine::createLayerScript (
     wrapper << "(function() {\n"
 	    << "  var __id = " << id << ";\n"
 	    << "  var __props = Object.assign({}, globalThis.__layerSeedProps || {});\n"
-	    << "  var thisLayer = { text: String(globalThis.__layerSeedText || '') };\n"
+	    // thisLayer exposes the text plus the standard layer transform/appearance
+	    // fields. WE text scripts read these (e.g. thisLayer.origin.subtract(...));
+	    // without them the access would throw "cannot read property of undefined".
+	    << "  var thisLayer = {\n"
+	    << "    text: String(globalThis.__layerSeedText || ''),\n"
+	    << "    origin: typeof Vec3 !== 'undefined' ? new Vec3(0,0,0) : {x:0,y:0,z:0},\n"
+	    << "    scale: typeof Vec3 !== 'undefined' ? new Vec3(1,1,1) : {x:1,y:1,z:1},\n"
+	    << "    angles: typeof Vec3 !== 'undefined' ? new Vec3(0,0,0) : {x:0,y:0,z:0},\n"
+	    << "    parallaxDepth: typeof Vec2 !== 'undefined' ? new Vec2(0,0) : {x:0,y:0},\n"
+	    << "    color: typeof Vec3 !== 'undefined' ? new Vec3(1,1,1) : {x:1,y:1,z:1},\n"
+	    << "    alpha: 1, visible: true, alignment: 0, pointsize: 32, font: '',\n"
+	    << "    getParent: function() { return globalThis.__missingLayer; }\n"
+	    << "  };\n"
 	    << "  var thisScene = {\n"
 	    << "    get time()        { var c = globalThis.__sceneCtx; return c ? c.time : 0; },\n"
 	    << "    get currentTime() { var c = globalThis.__sceneCtx; return c ? c.time : 0; },\n"
@@ -1724,6 +1741,12 @@ ScriptLayerHandle ScriptEngine::createLayerScript (
 	    << "  var engine = {\n"
 	    << "    get frametime() { var c = globalThis.__sceneCtx; return c ? c.dt : 0; },\n"
 	    << "    get time()      { var c = globalThis.__sceneCtx; return c ? c.time : 0; },\n"
+	    << "  };\n"
+	    // input shim (cursor position): some text scripts read input.cursorWorldPosition.
+	    // Prefer the live global updated per frame, fall back to zero vectors.
+	    << "  var input = globalThis.input || {\n"
+	    << "    cursorPosition: typeof Vec2 !== 'undefined' ? new Vec2(0,0) : {x:0,y:0},\n"
+	    << "    cursorWorldPosition: typeof Vec3 !== 'undefined' ? new Vec3(0,0,0) : {x:0,y:0,z:0}\n"
 	    << "  };\n"
 	    << "  function createScriptProperties() {\n"
 	    << "    var builder = {\n"
@@ -1759,6 +1782,11 @@ ScriptLayerHandle ScriptEngine::createLayerScript (
 	    << "})();\n";
 
     const std::string evalScript = wrapper.str ();
+    if (const char* dbg = getenv ("LWE_DUMP_SCRIPTS"); dbg != nullptr) {
+	static int layerDumpIdx = 0;
+	std::ofstream f ("/tmp/lwe_layer_" + std::to_string (layerDumpIdx++) + ".js");
+	f << evalScript;
+    }
     JSValue result = JS_Eval (ctx, evalScript.c_str (), evalScript.size (), "<layer-script>", JS_EVAL_TYPE_GLOBAL);
 
     // Unset seeds so they don't leak into the next createLayerScript call.

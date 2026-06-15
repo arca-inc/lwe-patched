@@ -544,7 +544,6 @@ std::string ShaderUnit::injectMissingVaryings (std::string source) const {
 	const size_t mainPos = source.find ("void main");
 	if (mainPos != std::string::npos) {
 	    source.insert (mainPos, injected);
-	    sLog.out ("Injected missing varyings into fragment shader ", this->m_file, ": ", injected);
 	}
     }
 

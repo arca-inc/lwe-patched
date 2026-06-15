@@ -110,6 +110,12 @@ private:
      */
     [[nodiscard]] std::string applyFragmentTexCoordCompatibility (std::string source) const;
     /**
+     * Injects into the fragment shader any varying declarations that are present in the linked
+     * vertex shader but absent from the fragment. Some workshop effect shaders declare varyings
+     * (e.g. v_Bounds) only in the vertex stage and forget to redeclare them in the fragment.
+     */
+    [[nodiscard]] std::string injectMissingVaryings (std::string source) const;
+    /**
      * Drops the `const` qualifier from local declarations whose initializer is non-constant
      * (references attributes/varyings/uniforms), which Wallpaper Engine tolerates but glslang rejects.
      */

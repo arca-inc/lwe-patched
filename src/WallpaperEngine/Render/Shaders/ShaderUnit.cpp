@@ -509,6 +509,44 @@ std::string ShaderUnit::applyFragmentTexCoordCompatibility (std::string source) 
     return source;
 }
 
+std::string ShaderUnit::injectMissingVaryings (std::string source) const {
+    if (this->m_type != GLSLContext::UnitType_Fragment || this->m_link == nullptr) {
+	return source;
+    }
+
+    // Collect all varyings declared in the vertex shader (even inside #if blocks)
+    static const std::regex vertexVaryingRe (R"(\bvarying\s+(\w+)\s+(\w+)\s*;)");
+    const std::string& vertSrc = this->m_link->m_preprocessed;
+
+    std::string injected;
+    auto vit = std::sregex_iterator (vertSrc.cbegin (), vertSrc.cend (), vertexVaryingRe);
+    const std::sregex_iterator vend;
+    for (; vit != vend; ++vit) {
+	const std::string type = (*vit)[1].str ();
+	const std::string name = (*vit)[2].str ();
+
+	// Skip known compatibility aliases introduced by our own preprocessing
+	if (name == "in" || name == "out") continue;
+
+	// Check if this varying is already in the fragment shader
+	const std::regex fragHas ("\\bvarying\\s+\\w+\\s+" + name + "\\s*;");
+	if (!std::regex_search (source, fragHas)) {
+	    injected += "varying " + type + " " + name + "; // [lwe] injected from vertex\n";
+	}
+    }
+
+    if (!injected.empty ()) {
+	// Insert before void main() so declarations are in scope
+	const size_t mainPos = source.find ("void main");
+	if (mainPos != std::string::npos) {
+	    source.insert (mainPos, injected);
+	    sLog.out ("Injected missing varyings into fragment shader ", this->m_file, ": ", injected);
+	}
+    }
+
+    return source;
+}
+
 std::string ShaderUnit::stripNonConstInitializers (std::string source) const {
     // Wallpaper Engine's HLSL→GLSL output sometimes declares `const` locals
     // initialized from runtime values, e.g. `const vec4 position = vec4(a_Position, 1.0);`.
@@ -828,7 +866,8 @@ const std::string& ShaderUnit::compile () {
 
     // this should be the rest of the shader
     this->m_final += this->applyFragmentTexCoordCompatibility (
-	this->applyLinkedVaryingCompatibility (this->stripNonConstInitializers (this->m_preprocessed)));
+	this->injectMissingVaryings (
+	    this->applyLinkedVaryingCompatibility (this->stripNonConstInitializers (this->m_preprocessed))));
 
     // the pass itself handles shader compilation, the unit doesn't have enough information for this step
     return this->m_final;

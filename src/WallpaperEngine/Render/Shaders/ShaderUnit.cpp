@@ -509,6 +509,41 @@ std::string ShaderUnit::applyFragmentTexCoordCompatibility (std::string source) 
     return source;
 }
 
+std::string ShaderUnit::stripNonConstInitializers (std::string source) const {
+    // Wallpaper Engine's HLSL→GLSL output sometimes declares `const` locals
+    // initialized from runtime values, e.g. `const vec4 position = vec4(a_Position, 1.0);`.
+    // glslang rejects a const with a non-constant initializer ("non-constant
+    // initializer : not supported"), which aborts vertex compilation and leaves
+    // gl_Position unwritten. Drop the const qualifier when the initializer references
+    // shader I/O (a_/v_/g_/u_/gl_ identifiers); genuine constant initializers such as
+    // array sizes (`const int N = 4;`) contain no such reference and are left intact.
+    static const std::regex constDecl (R"(\bconst\s+([A-Za-z_]\w*\s+[A-Za-z_]\w*\s*=\s*)([^;]*);)");
+    static const std::regex nonConstRef (R"(\b(a_|v_|g_|u_|gl_)\w+)");
+
+    std::string result;
+    result.reserve (source.size ());
+    auto searchStart = source.cbegin ();
+    std::smatch match;
+    bool changed = false;
+    while (std::regex_search (searchStart, source.cend (), match, constDecl)) {
+	result.append (searchStart, match[0].first);
+	if (std::regex_search (match[2].first, match[2].second, nonConstRef)) {
+	    result += match[1].str () + match[2].str () + ";"; // const dropped
+	    changed = true;
+	} else {
+	    result += match[0].str (); // genuine constant — keep as-is
+	}
+	searchStart = match[0].second;
+    }
+    result.append (searchStart, source.cend ());
+
+    if (changed) {
+	sLog.out ("Stripped const from non-constant initializers in ", this->m_file);
+    }
+
+    return result;
+}
+
 void ShaderUnit::parseComboConfiguration (const std::string& content, const int defaultValue) {
     // TODO: SUPPORT REQUIRES SO WE PROPERLY FOLLOW THE REQUIRED CHAIN
     JSON data;
@@ -792,8 +827,8 @@ const std::string& ShaderUnit::compile () {
     }
 
     // this should be the rest of the shader
-    this->m_final
-	+= this->applyFragmentTexCoordCompatibility (this->applyLinkedVaryingCompatibility (this->m_preprocessed));
+    this->m_final += this->applyFragmentTexCoordCompatibility (
+	this->applyLinkedVaryingCompatibility (this->stripNonConstInitializers (this->m_preprocessed)));
 
     // the pass itself handles shader compilation, the unit doesn't have enough information for this step
     return this->m_final;

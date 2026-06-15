@@ -31,6 +31,17 @@ float coerceFloat (const JSON& node) {
     }
     return 0.0f;
 }
+
+// Combo option keys and the selected value must stringify the same way so the
+// selection can be matched. WE sometimes stores them as booleans/numbers (e.g.
+// a 12h/24h combo with "value": true), which would throw type_error.302 on a
+// direct .get<std::string>(). Normalize every scalar to a stable string form.
+std::string coerceComboKey (const JSON& node) {
+    if (node.is_string ()) return node.get<std::string> ();
+    if (node.is_number ()) return std::to_string (node.get<int> ());
+    if (node.is_boolean ()) return node.get<bool> () ? "true" : "false";
+    return node.dump ();
+}
 } // namespace
 
 PropertySharedPtr PropertyParser::parse (const JSON& it, const std::string& name) {
@@ -91,7 +102,7 @@ PropertySharedPtr PropertyParser::parseCombo (const JSON& it, const std::string&
 	const auto value = cur.require ("value", "Combo option must have a value");
 
 	optionsMap.emplace (
-	    value.is_number () ? std::to_string (value.get<int> ()) : value.get<std::string> (),
+	    coerceComboKey (value),
 	    cur.require ("label", "Combo option must have a label")
 	);
     }
@@ -104,7 +115,7 @@ PropertySharedPtr PropertyParser::parseCombo (const JSON& it, const std::string&
 	    .text = it.optional<std::string> ("text", ""),
 	},
 	ComboData { .values = optionsMap },
-	value.is_number () ? std::to_string (value.get<int> ()) : value.get<std::string> ()
+	coerceComboKey (value)
     );
 }
 
@@ -175,11 +186,15 @@ PropertySharedPtr PropertyParser::parseFile (const JSON& it, const std::string& 
 }
 
 PropertySharedPtr PropertyParser::parseTextInput (const JSON& it, const std::string& name) {
+    // textinput/usershortcut properties legitimately ship with no default value
+    // (the user types one in); requiring "value" aborted the whole wallpaper.
+    const auto value = it.optional ("value");
+
     return std::make_shared<PropertyTextInput> (
 	PropertyData {
 	    .name = name,
 	    .text = it.optional<std::string> ("text", ""),
 	},
-	it.require ("value", "Property must have a value").dump ()
+	value.has_value () ? value->dump () : std::string ()
     );
 }

@@ -892,9 +892,13 @@ void WallpaperApplication::render () {
 	    this->m_isPaused = false;
 	} else {
 		// update g_Daytime
-		time (&seconds);
-		timeinfo = localtime (&seconds);
-		g_Daytime = static_cast<float>((timeinfo->tm_hour * 60) + timeinfo->tm_min) / (24.0f * 60.0f);
+		time_t current_seconds;
+		time (&current_seconds);
+		if (current_seconds != seconds) {
+		    seconds = current_seconds;
+		    timeinfo = localtime (&seconds);
+		    g_Daytime = static_cast<float>((timeinfo->tm_hour * 60) + timeinfo->tm_min) / (24.0f * 60.0f);
+		}
 
 		// keep track of the previous frame's time
 		g_TimeLast = g_Time;

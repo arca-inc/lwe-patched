@@ -48,7 +48,7 @@ void CefWebBackend::start (
 
     CefBrowserSettings browserSettings;
     // documentation says that 60 fps is the maximum value
-    browserSettings.windowless_frame_rate = std::max (60, fps);
+    browserSettings.windowless_frame_rate = std::min (60, fps);
 
     this->m_client = new BrowserClient (this->m_renderHandler);
     // Pass property overrides so OnLoadEnd can call wallpaperPropertyListener.applyUserProperties

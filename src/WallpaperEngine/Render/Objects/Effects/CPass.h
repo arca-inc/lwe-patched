@@ -87,6 +87,9 @@ private:
 	UniformType type;
 	const void* value;
 	int count;
+	// When true, this is a Wallpaper Engine "position" uniform whose x must be
+	// scaled by the scene aspect ratio at upload time (see setupRenderUniforms).
+	bool position = false;
     };
 
     class ReferenceUniformEntry {

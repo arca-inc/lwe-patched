@@ -439,6 +439,18 @@ DynamicValueUniquePtr ScriptEngine::jsToDynamicValue (JSValue val, DynamicValue:
 		result->update (
 		    glm::ivec4 (readInt ("x"), readInt ("y"), readInt ("z"), readInt ("w")));
 		break;
+	    case DynamicValue::Boolean: {
+		// Visibility scripts return `thisLayer` (an object) and mutate
+		// thisLayer.visible rather than returning a bare boolean. Read that
+		// property; treating the object as a vector left visible at 0/false,
+		// which silently hid scripted layers (e.g. the swords and clock).
+		JSValue v = JS_GetPropertyStr (ctx, val, "visible");
+		if (!JS_IsException (v) && !JS_IsUndefined (v)) {
+		    result->update (static_cast<bool> (JS_ToBool (ctx, v)));
+		}
+		JS_FreeValue (ctx, v);
+		break;
+	    }
 	    default: {
 		// try to read as vec3 by default (most common for origin/angles)
 		float x = readFloat ("x");

@@ -396,6 +396,18 @@ void CText::render () {
     if (!m_valid) return;
     if (!m_text.visible->value->getBool ()) return;
 
+    // Capture the VAO/program bound by the scene *before* doing anything: the
+    // script tick below can rebuild the glyph texture, which rebinds our own VAO
+    // (and leaves VAO 0). CPass-based effect passes that render after this text
+    // (reflection, post-processing, …) configure their attributes into whatever
+    // VAO is currently bound, so we must hand the scene's VAO back untouched —
+    // otherwise they call glVertexAttribPointer with no VAO (core profile) →
+    // GL_INVALID_OPERATION, which broke the reflection pass and the screenshot.
+    GLint prevVao = 0;
+    GLint prevProgram = 0;
+    glGetIntegerv (GL_VERTEX_ARRAY_BINDING, &prevVao);
+    glGetIntegerv (GL_CURRENT_PROGRAM, &prevProgram);
+
     if (m_layerHandle != Scripting::kInvalidLayerHandle) {
 	auto& se = Scripting::ScriptEngine::instance ();
 	se.tickLayer (
@@ -404,9 +416,21 @@ void CText::render () {
 	    static_cast<double> (getScene ().getDeltaTime ()),
 	    static_cast<double> (getScene ().getFps ())
 	);
-	const std::string current = se.layerText (m_layerHandle);
+	// Strip control characters: clock scripts emit "\0" (a single NUL) to mean
+	// "show nothing" (e.g. when the time/date is toggled off). That NUL is not an
+	// empty string, so FreeType rasterized it as the .notdef glyph — a filled box
+	// that showed up as a black square over the wallpaper. Drop non-printable
+	// bytes and, if nothing renderable is left, skip drawing entirely. No GL state
+	// has been touched yet, so bailing here is safe.
+	std::string current;
+	for (const char c : se.layerText (m_layerHandle)) {
+	    if (static_cast<unsigned char> (c) >= 0x20)
+		current.push_back (c);
+	}
+	if (current.empty ())
+	    return;
 	if (current != m_lastRenderedText) {
-	    rebuildTextureFrom (current.empty () ? std::string (" ") : current);
+	    rebuildTextureFrom (current);
 	}
     }
 
@@ -436,7 +460,26 @@ void CText::render () {
 			  * getScene ().getCamera ().getLookAt ()
 			  * model;
 
+    // Fully isolate the GL state text rendering depends on. Effect passes that ran
+    // before us (godrays, pulse, …) leave non-default state — notably a blend
+    // equation like GL_MIN/REVERSE_SUBTRACT, depth/scissor/stencil tests, a bound
+    // sampler object, or a partial color mask. We only set glBlendFunc previously,
+    // so a leaked blend *equation* turned the glyph quad into a dark "subtract"
+    // block (the black square over the wallpaper). Reset everything we rely on,
+    // then restore the pieces the rest of the pipeline expects.
+    GLboolean prevDepth = glIsEnabled (GL_DEPTH_TEST);
+    GLboolean prevScissor = glIsEnabled (GL_SCISSOR_TEST);
+    GLboolean prevStencil = glIsEnabled (GL_STENCIL_TEST);
+    GLboolean prevCull = glIsEnabled (GL_CULL_FACE);
+
+    glDisable (GL_DEPTH_TEST);
+    glDisable (GL_SCISSOR_TEST);
+    glDisable (GL_STENCIL_TEST);
+    glDisable (GL_CULL_FACE);
+    glColorMask (GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+
     glEnable (GL_BLEND);
+    glBlendEquation (GL_FUNC_ADD);
     glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     glUseProgram (m_program);
@@ -444,10 +487,19 @@ void CText::render () {
     glUniform4f (m_uColor, color.r, color.g, color.b, color.a * alpha);
 
     glActiveTexture (GL_TEXTURE0);
+    glBindSampler (0, 0); // ignore any leaked sampler object on unit 0
     glBindTexture (GL_TEXTURE_2D, m_texture);
     glUniform1i (m_uTexture, 0);
 
     glBindVertexArray (m_vao);
     glDrawArrays (GL_TRIANGLES, 0, 6);
-    glBindVertexArray (0);
+
+    // Restore the enables the effect pipeline may rely on (blend func/equation are
+    // re-set by each CPass, so we leave them at our additive defaults).
+    glBindVertexArray (static_cast<GLuint> (prevVao));
+    glUseProgram (static_cast<GLuint> (prevProgram));
+    if (prevDepth) glEnable (GL_DEPTH_TEST);
+    if (prevScissor) glEnable (GL_SCISSOR_TEST);
+    if (prevStencil) glEnable (GL_STENCIL_TEST);
+    if (prevCull) glEnable (GL_CULL_FACE);
 }

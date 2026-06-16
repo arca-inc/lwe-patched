@@ -787,6 +787,14 @@ void ShaderUnit::parseParameterConfiguration (
 	parameter->setIdentifierName (*material);
 	parameter->setName (name);
 
+	// "position":true uniforms (e.g. a circle center / fixed size) carry an x
+	// component normalized to height; flag them so CPass can rescale x by the
+	// aspect ratio when uploading, matching Wallpaper Engine's behaviour.
+	if (const auto position = data.find ("position");
+	    position != data.end () && position->is_boolean () && position->get<bool> ()) {
+	    parameter->setPosition (true);
+	}
+
 	this->m_parameters.push_back (parameter);
     }
 }

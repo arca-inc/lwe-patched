@@ -341,7 +341,19 @@ void CPass::setupRenderUniforms () {
 		glUniform3fv (value->id, 1, glm::value_ptr (*static_cast<const glm::vec3*> (value->value)));
 		break;
 	    case Vector2:
-		glUniform2fv (value->id, 1, glm::value_ptr (*static_cast<const glm::vec2*> (value->value)));
+		if (value->position) {
+		    // WE stores position x normalized to height; rescale by the scene
+		    // aspect ratio so circular shapes (e.g. the audio ring) stay round.
+		    const auto& scene = this->m_renderable.getScene ();
+		    const float height = static_cast<float> (scene.getHeight ());
+		    glm::vec2 vec = *static_cast<const glm::vec2*> (value->value);
+		    if (height > 0.0f) {
+			vec.x *= static_cast<float> (scene.getWidth ()) / height;
+		    }
+		    glUniform2fv (value->id, 1, glm::value_ptr (vec));
+		} else {
+		    glUniform2fv (value->id, 1, glm::value_ptr (*static_cast<const glm::vec2*> (value->value)));
+		}
 		break;
 	    case Matrix4:
 		glUniformMatrix4fv (
@@ -929,6 +941,12 @@ void CPass::addUniform (const ShaderVariable* value, const DynamicValue* setting
 	this->addUniform (value->getName (), &setting->getInt ());
     } else if (value->is<ShaderVariableVector2> ()) {
 	this->addUniform (value->getName (), &setting->getVec2 ());
+	// Flag position uniforms so their x gets aspect-corrected on upload.
+	if (value->isPosition ()) {
+	    if (const auto it = this->m_uniforms.find (value->getName ()); it != this->m_uniforms.end ()) {
+		it->second->position = true;
+	    }
+	}
     } else if (value->is<ShaderVariableVector3> ()) {
 	this->addUniform (value->getName (), &setting->getVec3 ());
     } else if (value->is<ShaderVariableVector4> ()) {

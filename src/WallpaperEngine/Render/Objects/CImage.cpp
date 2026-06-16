@@ -311,12 +311,6 @@ CImage::CImage (Wallpapers::CScene& scene, const Image& image) :
     GLfloat realY = 0.0;
 
     if (this->getImage ().model->passthrough) {
-	// Passthrough shaders fill the destination FBO from texcoords and sample the scene using positions.
-	// Keep the destination quad full-screen in local FBO space, but pass scene-space positions through.
-	x = 0.0f;
-	y = 0.0f;
-	width = 1.0f;
-	height = 1.0f;
 	realX = this->m_pos.x;
 	realY = this->m_pos.w;
 	realWidth = this->m_pos.z;
@@ -1026,8 +1020,6 @@ void CImage::uploadGeometryBuffers (const glm::vec2& size) {
     GLfloat realY = 0.0f;
 
     if (this->getImage ().model->passthrough) {
-	width = 1.0f;
-	height = 1.0f;
 	realX = this->m_pos.x;
 	realY = this->m_pos.w;
 	realWidth = this->m_pos.z;

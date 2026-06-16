@@ -378,7 +378,7 @@ CImage::CImage (Wallpapers::CScene& scene, const Image& image) :
 	= this->getScene ().getCamera ().getProjection () * this->getScene ().getCamera ().getLookAt ();
 
     if (this->getImage ().model->passthrough) {
-	this->m_modelViewProjectionCopy = glm::mat4(1.0f);
+	this->m_modelViewProjectionCopy = this->m_modelViewProjectionScreen;
     } else {
 	this->m_modelViewProjectionCopy = glm::ortho<float> (0.0, size.x, 0.0, size.y);
     }
@@ -1064,7 +1064,7 @@ void CImage::uploadGeometryBuffers (const glm::vec2& size) {
 
     this->m_sceneCenter = glm::vec3 ((this->m_pos.x + this->m_pos.z) / 2.0f, (this->m_pos.y + this->m_pos.w) / 2.0f, 0.0f);
     this->m_modelViewProjectionCopy = this->getImage ().model->passthrough
-	? glm::mat4(1.0f)
+	? this->m_modelViewProjectionScreen
 	: glm::ortho<float> (0.0, size.x, 0.0, size.y);
     this->m_modelViewProjectionCopyInverse = glm::inverse (this->m_modelViewProjectionCopy);
     this->m_modelMatrix = glm::ortho<float> (0.0, size.x, 0.0, size.y);
@@ -1119,8 +1119,8 @@ void CImage::updateScreenSpacePosition () {
     this->m_modelViewProjectionScreen = mvp;
     this->m_modelViewProjectionScreenInverse = glm::inverse (mvp);
     if (this->getImage ().model->passthrough) {
-	this->m_modelViewProjectionCopy = glm::mat4(1.0f);
-	this->m_modelViewProjectionCopyInverse = glm::mat4(1.0f);
+	this->m_modelViewProjectionCopy = this->m_modelViewProjectionScreen;
+	this->m_modelViewProjectionCopyInverse = this->m_modelViewProjectionScreenInverse;
     }
 }
 

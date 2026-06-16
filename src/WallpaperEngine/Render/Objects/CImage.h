@@ -115,6 +115,7 @@ private:
     std::shared_ptr<const CFBO> m_subFBO = nullptr;
     std::shared_ptr<const CFBO> m_currentMainFBO = nullptr;
     std::shared_ptr<const CFBO> m_currentSubFBO = nullptr;
+    std::shared_ptr<const CFBO> m_passthroughFBO = nullptr;
 
     const Image& m_image;
 

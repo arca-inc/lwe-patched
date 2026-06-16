@@ -267,6 +267,15 @@ CImage::CImage (Wallpapers::CScene& scene, const Image& image) :
 	nameB.str (), TextureFormat_ARGB8888, this->m_texture->getFlags (), 1, { size.x, size.y }, { size.x, size.y }
     );
 
+    if (this->getImage().model->passthrough) {
+	auto sceneFBO = scene.getFBO();
+	float w = static_cast<float>(sceneFBO->getRealWidth());
+	float h = static_cast<float>(sceneFBO->getRealHeight());
+	this->m_passthroughFBO = this->create (
+	    "_rt_FullFrameBuffer", TextureFormat_ARGB8888, sceneFBO->getFlags(), 1.0f, { w, h }, { w, h }
+	);
+    }
+
     // build a list of vertices, these might need some change later (or maybe invert the camera)
     GLfloat sceneSpacePosition[] = { this->m_pos.x, this->m_pos.y, 0.0f, this->m_pos.x, this->m_pos.w, 0.0f,
 				     this->m_pos.z, this->m_pos.y, 0.0f, this->m_pos.z, this->m_pos.y, 0.0f,
@@ -894,6 +903,15 @@ void CImage::render () {
 
     if (!this->getImage ().visible->value->getBool ()) {
 	return;
+    }
+
+    if (this->m_passthroughFBO != nullptr) {
+	auto sceneFBO = this->getScene().getFBO();
+	GLint w = static_cast<GLint>(sceneFBO->getRealWidth());
+	GLint h = static_cast<GLint>(sceneFBO->getRealHeight());
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, sceneFBO->getFramebuffer());
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, this->m_passthroughFBO->getFramebuffer());
+	glBlitFramebuffer(0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
     }
 
     glColorMask (true, true, true, true);

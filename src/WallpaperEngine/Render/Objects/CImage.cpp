@@ -788,12 +788,13 @@ void CImage::setupPasses () {
 	std::shared_ptr<const CFBO> prevDrawTo = drawTo;
 	bool writesToTarget = false;
 	const bool isFirstPass = first;
-	GLuint spacePosition = (isFirstPass)
+	const bool isPassthroughFinal = std::next (cur) == end && this->getImage ().model->passthrough;
+	GLuint spacePosition = (isFirstPass || isPassthroughFinal)
 	    ? (this->m_hasPuppetMesh ? this->m_puppetSpacePosition : this->getCopySpacePosition ())
 	    : this->getPassSpacePosition ();
-	const glm::mat4* projection = (isFirstPass) ? &this->m_modelViewProjectionCopy : &this->m_modelViewProjectionPass;
+	const glm::mat4* projection = (isFirstPass || isPassthroughFinal) ? &this->m_modelViewProjectionCopy : &this->m_modelViewProjectionPass;
 	const glm::mat4* inverseProjection
-	    = (isFirstPass) ? &this->m_modelViewProjectionCopyInverse : &this->m_modelViewProjectionPassInverse;
+	    = (isFirstPass || isPassthroughFinal) ? &this->m_modelViewProjectionCopyInverse : &this->m_modelViewProjectionPassInverse;
 	first = false;
 
 	if (isFirstPass && this->m_hasPuppetMesh) {

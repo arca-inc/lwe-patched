@@ -114,18 +114,24 @@ public:
 	    // format the number as float vector
 	    copy = std::to_string (((color >> 16) & 0xFF) / 255.0) + " "
 		+ std::to_string (((color >> 8) & 0xFF) / 255.0) + " " + std::to_string ((color & 0xFF) / 255.0);
-	} else if (copy.find ('.') == std::string::npos) {
-	    // integer vector, convert it to float vector
-	    const auto intcolor = VectorBuilder::parse<glm::ivec3> (copy);
-
-	    copy = std::to_string (intcolor.r / 255.0) + " " + std::to_string (intcolor.g / 255.0) + " "
-		+ std::to_string (intcolor.b / 255.0);
+	} else {
+	    // Non-hex components, which may be 0-1 floats (how Wallpaper Engine stores
+	    // colors) or 0-255 integers. The old "no decimal point ⇒ 0-255" heuristic
+	    // misfired on whole-number floats: pure white "1 1 1" was divided by 255 to
+	    // ~black, so a white clock turned invisible (the red glow behind it showed
+	    // through, looking "red"). Decide by magnitude instead — only normalize when
+	    // a component actually exceeds 1. Widen to vec4 with full alpha (the vec3
+	    // overload stores w=0, which would propagate alpha 0 to bound colors and make
+	    // the layer fully transparent); colors are always opaque.
+	    glm::vec3 parsed = VectorBuilder::parse<glm::vec3> (copy);
+	    if (parsed.x > 1.0f || parsed.y > 1.0f || parsed.z > 1.0f) {
+		parsed /= 255.0f;
+	    }
+	    this->update (glm::vec4 (parsed, 1.0f));
+	    return;
 	}
 
-	// Parse as a float vector and widen to vec4 with full alpha. DynamicValue's
-	// vec3 overload stores w=0, so a color override (e.g. --set-property
-	// timecolor=...) would propagate alpha 0 to every bound color and make the
-	// layer (e.g. the clock text) fully transparent. Colors are always opaque.
+	// Hex path: `copy` now holds a normalized "r g b" float string.
 	this->update (glm::vec4 (VectorBuilder::parse<glm::vec3> (copy), 1.0f));
     }
 

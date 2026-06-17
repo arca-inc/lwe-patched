@@ -224,6 +224,7 @@ TextUniquePtr ObjectParser::parseText (const JSON& it, const Project& project, O
     const auto& properties = project.properties;
     const auto textIt = it.require ("text", "Text object must have a text field");
 
+    const auto& effects = it.optional ("effects");
     std::string text;
     std::string script;
     std::map<std::string, UserSettingUniquePtr> scriptProps;
@@ -259,8 +260,19 @@ TextUniquePtr ObjectParser::parseText (const JSON& it, const Project& project, O
 	    .alignment = it.optional ("horizontalalign", it.optional ("alignment", std::string ("center"))),
 	    .verticalalign = it.optional ("verticalalign", std::string ("center")),
 	    .padding = it.optional ("padding", 0),
+	    .effects = effects.has_value () ? parseEffects (*effects, project) : std::vector<ImageEffectUniquePtr> {},
 	}
     );
+
+    // Bind script context for any scripted effect-pass constants (e.g. animated
+    // overrides), mirroring parseImage so two-colour text effects resolve.
+    for (const auto& effect : result->effects) {
+	for (const auto& pass : effect->passOverrides) {
+	    for (const auto& [name, constant] : pass->constants) {
+		bindScriptContext (constant, result->id, result->name, name);
+	    }
+	}
+    }
 
     widenColorToVec4 (*result->color->value);
     // origin / groupScale / groupAngles are part of the shared ObjectData base and are

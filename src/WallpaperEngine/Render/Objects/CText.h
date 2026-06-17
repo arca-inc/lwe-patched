@@ -1,10 +1,12 @@
 #pragma once
 
+#include <memory>
 #include <string>
 #include <vector>
 
 #include <GL/glew.h>
 #include <glm/vec2.hpp>
+#include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
 
 #include "WallpaperEngine/Render/CObject.h"
@@ -18,6 +20,14 @@ typedef struct FT_FaceRec_* FT_Face;
 
 namespace WallpaperEngine::Render::Wallpapers {
 class CScene;
+}
+
+namespace WallpaperEngine::Render {
+class TextureProvider;
+}
+
+namespace WallpaperEngine::Data::Model {
+class DynamicValue;
 }
 
 namespace WallpaperEngine::Render::Objects {
@@ -58,6 +68,9 @@ private:
     bool loadSystemFont ();
     unsigned int computeEffectivePixelSize () const;
     void initScriptLayer ();
+    // Detects the WE "clouds" effect (the two-colour text tint) on this object and
+    // caches its parameters so render() can reproduce it inline in the text shader.
+    void detectCloudsEffect ();
 
     const Text& m_text;
     std::string m_lastRenderedText;
@@ -75,6 +88,26 @@ private:
     GLint m_uMVP = -1;
     GLint m_uColor = -1;
     GLint m_uTexture = -1;
+
+    // Inline "clouds" two-colour effect (timecolor ↔ timecolor2 cloudy blend).
+    bool m_hasClouds = false;
+    glm::vec3 m_cloudColor2 = {0.0f, 0.0f, 0.0f};
+    // Live source of the second colour (bound to e.g. timecolor2). Read every
+    // frame so colour changes pushed by the host (hot-swap --set-property) apply.
+    const DynamicValue* m_cloudColor2Value = nullptr;
+    glm::vec2 m_cloudSpeed = {0.0f, -0.01f};
+    glm::vec2 m_cloudScale = {1.0f, 1.0f};
+    float m_cloudThreshold = 0.0f;
+    float m_cloudFeather = 0.5f;
+    std::shared_ptr<const TextureProvider> m_cloudTexture = nullptr;
+    GLint m_uColor2 = -1;
+    GLint m_uClouds = -1;
+    GLint m_uTime = -1;
+    GLint m_uCloudSpeed = -1;
+    GLint m_uCloudScale = -1;
+    GLint m_uThreshold = -1;
+    GLint m_uFeather = -1;
+    GLint m_uHasClouds = -1;
 
     glm::ivec2 m_textureSize = {0, 0};
     glm::vec2 m_quadSize = {0.0f, 0.0f};

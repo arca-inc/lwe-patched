@@ -614,6 +614,8 @@ struct TextData {
     std::string verticalalign;
     /** Padding inside the bounding box */
     int padding;
+    /** The effects applied to this text (e.g. the "clouds" two-colour tint) */
+    std::vector<ImageEffectUniquePtr> effects;
 };
 
 class Text : public Object, public TextData {

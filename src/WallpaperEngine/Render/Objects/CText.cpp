@@ -15,6 +15,8 @@
 #include "WallpaperEngine/Data/Model/UserSetting.h"
 #include "WallpaperEngine/Logging/Log.h"
 #include "WallpaperEngine/Render/Camera.h"
+#include "WallpaperEngine/Render/RenderContext.h"
+#include "WallpaperEngine/Render/TextureProvider.h"
 #include "WallpaperEngine/Render/Wallpapers/CScene.h"
 #include "WallpaperEngine/Scripting/ScriptEngine.h"
 
@@ -103,10 +105,31 @@ const char* kFragmentShader = R"glsl(
 in vec2 vUV;
 uniform sampler2D uTexture;
 uniform vec4 uColor;
+// Inline reproduction of Wallpaper Engine's "clouds" effect: blend the primary
+// colour (uColor, e.g. timecolor) with a secondary colour (uColor2, timecolor2)
+// using an animated tiling noise, so two-colour clock/date text works without a
+// full effect-pass pipeline. Disabled (plain colour) when uHasClouds is false.
+uniform bool uHasClouds;
+uniform sampler2D uClouds;
+uniform vec3 uColor2;
+uniform vec2 uCloudSpeed;
+uniform vec2 uCloudScale;
+uniform float uTime;
+uniform float uThreshold;
+uniform float uFeather;
 out vec4 FragColor;
 void main() {
     float coverage = texture(uTexture, vUV).r;
-    FragColor = vec4(uColor.rgb, uColor.a * coverage);
+    vec3 rgb = uColor.rgb;
+    if (uHasClouds) {
+	vec2 sc = max(uCloudScale, vec2(0.5));
+	vec2 a = fract((vUV + uTime * uCloudSpeed) * sc);
+	vec2 b = fract((vUV.yx - uTime * uCloudSpeed) * sc * 0.7 + 0.5);
+	float cl = texture(uClouds, a).r * texture(uClouds, b).r;
+	float blend = smoothstep(uThreshold, uThreshold + max(uFeather, 0.05), cl);
+	rgb = mix(uColor2, uColor.rgb, blend);
+    }
+    FragColor = vec4(rgb, uColor.a * coverage);
 }
 )glsl";
 
@@ -166,7 +189,54 @@ void CText::setup () {
     if (scripted)
 	initScriptLayer ();
 
+    detectCloudsEffect ();
+
     m_valid = m_texture != 0 && m_program != 0 && m_vao != 0;
+}
+
+void CText::detectCloudsEffect () {
+    // WE's two-colour text uses the "clouds" effect, whose per-pass override
+    // carries colorstart (= our base colour) and colorend (the second colour),
+    // plus the cloud animation parameters. Find that override and cache them.
+    for (const auto& eff : m_text.effects) {
+	if (eff->visible && eff->visible->value && !eff->visible->value->getBool ())
+	    continue;
+	for (const auto& ov : eff->passOverrides) {
+	    const auto colorend = ov->constants.find ("colorend");
+	    if (colorend == ov->constants.end () || !colorend->second || !colorend->second->value)
+		continue;
+
+	    m_cloudColor2Value = colorend->second->value.get ();
+	    m_cloudColor2 = m_cloudColor2Value->getVec3 ();
+	    if (const auto it = ov->constants.find ("speed"); it != ov->constants.end () && it->second->value)
+		m_cloudSpeed = it->second->value->getVec2 ();
+	    if (const auto it = ov->constants.find ("scale"); it != ov->constants.end () && it->second->value) {
+		const glm::vec4 v = it->second->value->getVec4 ();
+		m_cloudScale = {v.x, v.y};
+	    }
+	    if (const auto it = ov->constants.find ("threshold"); it != ov->constants.end () && it->second->value)
+		m_cloudThreshold = it->second->value->getFloat ();
+	    if (const auto it = ov->constants.find ("feather"); it != ov->constants.end () && it->second->value)
+		m_cloudFeather = it->second->value->getFloat ();
+
+	    m_hasClouds = true;
+	    break;
+	}
+	if (m_hasClouds)
+	    break;
+    }
+
+    if (!m_hasClouds)
+	return;
+
+    try {
+	m_cloudTexture = this->getContext ().resolveTexture ("util/clouds_256");
+    } catch (const std::exception& e) {
+	sLog.error ("CText: cannot load clouds texture, disabling two-colour: ", e.what ());
+	m_hasClouds = false;
+    }
+    if (m_cloudTexture == nullptr)
+	m_hasClouds = false;
 }
 
 bool CText::initFreeType () {
@@ -354,6 +424,14 @@ void CText::buildShader () {
     m_uMVP = glGetUniformLocation (m_program, "uMVP");
     m_uColor = glGetUniformLocation (m_program, "uColor");
     m_uTexture = glGetUniformLocation (m_program, "uTexture");
+    m_uHasClouds = glGetUniformLocation (m_program, "uHasClouds");
+    m_uClouds = glGetUniformLocation (m_program, "uClouds");
+    m_uColor2 = glGetUniformLocation (m_program, "uColor2");
+    m_uCloudSpeed = glGetUniformLocation (m_program, "uCloudSpeed");
+    m_uCloudScale = glGetUniformLocation (m_program, "uCloudScale");
+    m_uTime = glGetUniformLocation (m_program, "uTime");
+    m_uThreshold = glGetUniformLocation (m_program, "uThreshold");
+    m_uFeather = glGetUniformLocation (m_program, "uFeather");
 }
 
 void CText::uploadQuadVertices () {
@@ -485,6 +563,22 @@ void CText::render () {
     glUseProgram (m_program);
     glUniformMatrix4fv (m_uMVP, 1, GL_FALSE, glm::value_ptr (mvp));
     glUniform4f (m_uColor, color.r, color.g, color.b, color.a * alpha);
+
+    glUniform1i (m_uHasClouds, m_hasClouds ? 1 : 0);
+    if (m_hasClouds && m_cloudTexture != nullptr) {
+	// Read the second colour live so host-pushed colour changes apply.
+	const glm::vec3 color2 = m_cloudColor2Value != nullptr ? m_cloudColor2Value->getVec3 () : m_cloudColor2;
+	glUniform3f (m_uColor2, color2.r, color2.g, color2.b);
+	glUniform2f (m_uCloudSpeed, m_cloudSpeed.x, m_cloudSpeed.y);
+	glUniform2f (m_uCloudScale, m_cloudScale.x, m_cloudScale.y);
+	glUniform1f (m_uThreshold, m_cloudThreshold);
+	glUniform1f (m_uFeather, m_cloudFeather);
+	glUniform1f (m_uTime, static_cast<float> (getScene ().getTime ()));
+	glActiveTexture (GL_TEXTURE1);
+	glBindSampler (1, 0);
+	glBindTexture (GL_TEXTURE_2D, m_cloudTexture->getTextureID (0));
+	glUniform1i (m_uClouds, 1);
+    }
 
     glActiveTexture (GL_TEXTURE0);
     glBindSampler (0, 0); // ignore any leaked sampler object on unit 0

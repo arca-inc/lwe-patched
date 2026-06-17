@@ -1441,12 +1441,22 @@ void ScriptEngine::dispatchMediaEvents (JSValue module, const void* bindingKey) 
     // suffix makes the event re-fire when colours arrive after the initial URL change.
     const bool colorsReady = this->m_artColorsValid && this->m_artColorsUrl == this->m_mediaState.artUrl;
     const std::string thumbnailSignature = this->m_mediaState.artUrl + (colorsReady ? "|c" : "");
-    if (this->m_lastMediaThumbnail[bindingKey] != thumbnailSignature) {
+    // Use find() (not operator[]) so the event fires on the FIRST evaluation even
+    // when there is no media (empty signature) — matching the properties event.
+    // Otherwise album-art layers that gate visibility on hasThumbnail never get
+    // their initial "no thumbnail → hide" call and render as a black rectangle.
+    if (this->m_lastMediaThumbnail.find (bindingKey) == this->m_lastMediaThumbnail.end ()
+	|| this->m_lastMediaThumbnail[bindingKey] != thumbnailSignature) {
 	this->m_lastMediaThumbnail[bindingKey] = thumbnailSignature;
 	const WallpaperEngine::Media::MediaColors fallback {};
 	const WallpaperEngine::Media::MediaColors& c = colorsReady ? this->m_artColors : fallback;
 	JSValue event = JS_NewObject (ctx);
 	JS_SetPropertyStr (ctx, event, "url", JS_NewString (ctx, this->m_mediaState.artUrl.c_str ()));
+	// WE's MediaThumbnailEvent exposes hasThumbnail; album-art layers gate their
+	// visibility on it (visible = event.hasThumbnail). Without it the expression
+	// was undefined and such layers rendered as a black rectangle when no media
+	// was playing. True only when an actual thumbnail URL is present.
+	JS_SetPropertyStr (ctx, event, "hasThumbnail", JS_NewBool (ctx, !this->m_mediaState.artUrl.empty ()));
 	JS_SetPropertyStr (ctx, event, "primaryColor", makeVec3Object (ctx, c.primary.r, c.primary.g, c.primary.b));
 	JS_SetPropertyStr (ctx, event, "secondaryColor", makeVec3Object (ctx, c.secondary.r, c.secondary.g, c.secondary.b));
 	JS_SetPropertyStr (ctx, event, "tertiaryColor", makeVec3Object (ctx, c.tertiary.r, c.tertiary.g, c.tertiary.b));

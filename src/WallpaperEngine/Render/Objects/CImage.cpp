@@ -1132,6 +1132,18 @@ const std::vector<CEffect*>& CImage::getEffects () const { return this->m_effect
 const Effects::CMaterial* CImage::getMaterial () const { return this->m_material; }
 
 glm::vec2 CImage::getSize () const {
+    // Solid layers (e.g. the "darker theme" overlay) sample a 1x1 white texture
+    // stretched across an explicitly-sized quad. The texture dimensions are
+    // meaningless here, so honor the object's own size — otherwise the layer
+    // collapses to a ~1px quad that shows up as a small dark square over the
+    // wallpaper instead of the intended full-coverage tint.
+    if (this->m_image.model != nullptr && this->m_image.model->solidlayer) {
+	const glm::vec2 explicitSize = this->getImage ().size;
+	if (explicitSize.x > 0.0f && explicitSize.y > 0.0f) {
+	    return explicitSize;
+	}
+    }
+
     if (this->m_texture == nullptr) {
 	return this->getImage ().size;
     }

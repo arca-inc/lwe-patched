@@ -122,8 +122,11 @@ public:
 		+ std::to_string (intcolor.b / 255.0);
 	}
 
-	// finally parse the string as a float vector
-	this->update (VectorBuilder::parse<glm::vec3> (copy));
+	// Parse as a float vector and widen to vec4 with full alpha. DynamicValue's
+	// vec3 overload stores w=0, so a color override (e.g. --set-property
+	// timecolor=...) would propagate alpha 0 to every bound color and make the
+	// layer (e.g. the clock text) fully transparent. Colors are always opaque.
+	this->update (glm::vec4 (VectorBuilder::parse<glm::vec3> (copy), 1.0f));
     }
 
     [[nodiscard]] std::string dump () const override {

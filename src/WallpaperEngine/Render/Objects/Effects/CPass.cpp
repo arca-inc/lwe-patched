@@ -352,12 +352,18 @@ void CPass::setupRenderUniforms () {
 		break;
 	    case Vector2:
 		if (value->position) {
-		    // WE stores position x normalized to height; rescale by the scene
-		    // aspect ratio so circular shapes (e.g. the audio ring) stay round.
+		    // WE expresses a position's X normalized to height, so a size-style
+		    // uniform (e.g. the audio ring's "Fixed Size") must be rescaled by the
+		    // scene aspect to stay a true circle. But a rotation/emanation CENTER
+		    // (WE label ui_editor_properties_center, e.g. a fan "spin" or godrays)
+		    // is consumed raw: its shader aspect-corrects around the point itself,
+		    // so scaling x there would push the pivot off-centre and make the fan
+		    // orbit instead of spin. Skip the scaling for those.
+		    glm::vec2 vec = *static_cast<const glm::vec2*> (value->value);
+		    const bool isCenter = value->name.find ("enter") != std::string::npos;
 		    const auto& scene = this->m_renderable.getScene ();
 		    const float height = static_cast<float> (scene.getHeight ());
-		    glm::vec2 vec = *static_cast<const glm::vec2*> (value->value);
-		    if (height > 0.0f) {
+		    if (!isCenter && height > 0.0f) {
 			vec.x *= static_cast<float> (scene.getWidth ()) / height;
 		    }
 		    glUniform2fv (value->id, 1, glm::value_ptr (vec));

@@ -14,6 +14,7 @@
 #include "WallpaperEngine/Data/Model/DynamicValue.h"
 #include "WallpaperEngine/Data/Model/Material.h"
 #include "WallpaperEngine/Data/Model/Object.h"
+#include "WallpaperEngine/Data/Model/ScriptedDynamicValue.h"
 #include "WallpaperEngine/Data/Model/UserSetting.h"
 #include "WallpaperEngine/Data/Parsers/MaterialParser.h"
 #include "WallpaperEngine/Logging/Log.h"
@@ -598,7 +599,11 @@ void CImage::setup () {
 		// Some have attempted to declare effects with visible set to false.
 		bool allEffectsInvisible = true;
 		for (const auto& cur : this->m_image.effects) {
-			if (cur->visible->value->getBool()) {
+			// A script-driven visibility (e.g. an effect gated on the now-playing
+			// media thumbnail) starts false but can flip true at runtime, so treat
+			// it as potentially visible and keep the image.
+			if (cur->visible->value->getBool()
+			    || dynamic_cast<const ScriptedDynamicValue*> (cur->visible->value.get()) != nullptr) {
 				allEffectsInvisible = false;
 				break;
 			}
@@ -629,7 +634,34 @@ void CImage::setup () {
 
 	    // do not add non-visible effects, this might need some adjustements tho as some effects might not be
 	    // visible but affect the output of the image...
-	    if (!cur->visible->value->getBool ()) {
+	    // Exception: a script-driven visibility (e.g. an effect gated on the now-playing media
+	    // thumbnail) starts false but can flip true at runtime; build it so it can render once
+	    // visible. When it evaluates false its sampled thumbnail is transparent, so a normal blend
+	    // composites nothing and the base shows through.
+	    if (!cur->visible->value->getBool ()
+		&& dynamic_cast<const ScriptedDynamicValue*> (cur->visible->value.get ()) == nullptr) {
+		continue;
+	    }
+
+	    // "Previous album cover" transition effects bind $mediaPreviousThumbnail and are meant to
+	    // flash the outgoing cover for a fraction of a second on track change. Their per-frame
+	    // visibility can't be timed here (effects are baked once at setup), so building them would
+	    // leave them permanently on; a gradient blend over the (transparent) previous cover then
+	    // darkens the whole layer to black. Skip them and keep the current-cover effect only — the
+	    // cost is just the cross-fade between covers.
+	    bool bindsPreviousThumbnail = false;
+	    for (const auto& po : cur->passOverrides) {
+		for (const auto& [index, name] : po->usertextures) {
+		    if (name == "$mediaPreviousThumbnail") {
+			bindsPreviousThumbnail = true;
+			break;
+		    }
+		}
+		if (bindsPreviousThumbnail) {
+		    break;
+		}
+	    }
+	    if (bindsPreviousThumbnail) {
 		continue;
 	    }
 

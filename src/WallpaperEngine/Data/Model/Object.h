@@ -58,6 +58,9 @@ struct ImageEffectPassOverride {
     ComboMap combos;
     ShaderConstantMap constants;
     TextureMap textures;
+    // User-texture slot overrides (e.g. a "$mediaThumbnail" system texture bound to
+    // a blend slot for now-playing album art). Applied on top of textures in CPass.
+    TextureMap usertextures;
     std::optional<std::string> shaderOverride; // Overrides MaterialPass::shader when set
 };
 

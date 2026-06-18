@@ -338,6 +338,23 @@ std::shared_ptr<const TextureProvider> tryCreateImageTexture (RenderContext& con
     return std::make_shared<CTexture> (context, std::move (texture));
 }
 
+// A 1x1 fully transparent texture used as the $mediaThumbnail fallback when no
+// media is playing: an effect gated on the thumbnail (built unconditionally so it
+// can show art at runtime) then composites nothing and lets its base show through.
+// Built from an encoded 1x1 RGBA PNG so it goes through the same decode path as a
+// real cover.
+std::shared_ptr<const TextureProvider> transparentTexture (RenderContext& context) {
+    static const std::array<unsigned char, 68> kTransparentPng = {
+	0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+	0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+	0x89, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x62, 0x00, 0x01, 0x00, 0x00,
+	0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
+	0x42, 0x60, 0x82,
+    };
+    const std::vector<char> bytes (kTransparentPng.begin (), kTransparentPng.end ());
+    return tryCreateImageTexture (context, bytes);
+}
+
 std::shared_ptr<const TextureProvider> tryLoadMediaThumbnailUrl (RenderContext& context, const std::string& artUrl) {
     std::vector<char> bytes;
     if (artUrl.rfind ("file:", 0) == 0) {
@@ -410,7 +427,7 @@ std::shared_ptr<const TextureProvider> TextureCache::resolve (const std::string&
     if (filename == "$mediaThumbnail" || filename == "$mediaPreviousThumbnail") {
 	auto texture = tryLoadMediaThumbnail (this->getContext (), filename == "$mediaPreviousThumbnail");
 	if (texture == nullptr) {
-	    texture = this->resolve ("util/white");
+	    texture = transparentTexture (this->getContext ());
 	}
 	return texture;
     }

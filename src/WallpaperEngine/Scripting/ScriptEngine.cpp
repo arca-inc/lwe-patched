@@ -796,6 +796,7 @@ globalThis.__weRunIntervals = function(bindingKey) {
     if (engine.runtime < interval.next) continue;
     interval.next = engine.runtime + interval.delay;
     interval.callback();
+    if (interval.once) interval.active = false;
   }
 };
 globalThis.__missingLayer = { origin: new Vec3(0, 0, 0), scale: new Vec3(1, 1, 1), angles: new Vec3(0, 0, 0), size: new Vec2(0, 0), visible: false, alpha: 0, color: new Vec4(0, 0, 0, 0), parallaxDepth: new Vec2(0, 0), getParent() { return globalThis.__missingLayer; } };
@@ -817,6 +818,17 @@ globalThis.engine = {
       delay: Math.max(0.001, Number(delayMs || 0) / 1000),
       next: this.runtime + Math.max(0.001, Number(delayMs || 0) / 1000),
       active: true
+    };
+    globalThis.__weIntervalBucket().push(interval);
+    return function() { interval.active = false; };
+  },
+  setTimeout(callback, delayMs) {
+    const interval = {
+      callback,
+      delay: Math.max(0.001, Number(delayMs || 0) / 1000),
+      next: this.runtime + Math.max(0.001, Number(delayMs || 0) / 1000),
+      active: true,
+      once: true
     };
     globalThis.__weIntervalBucket().push(interval);
     return function() { interval.active = false; };

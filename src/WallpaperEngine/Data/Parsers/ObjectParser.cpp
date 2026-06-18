@@ -394,6 +394,7 @@ ObjectParser::parseEffectPassOverrides (const JSON& it, const Project& project) 
 ImageEffectPassOverrideUniquePtr ObjectParser::parseEffectPass (const JSON& it, const Project& project) {
     const auto& combos = it.optional ("combos");
     const auto& textures = it.optional ("textures");
+    const auto& usertextures = it.optional ("usertextures");
     const auto& constants = it.optional ("constantshadervalues");
 
     // TODO: PARSE CONSTANT SHADER VALUES AND FIND REFS?
@@ -403,6 +404,7 @@ ImageEffectPassOverrideUniquePtr ObjectParser::parseEffectPass (const JSON& it, 
 	.constants
 	= constants.has_value () ? ShaderConstantParser::parse (constants.value (), project) : ShaderConstantMap {},
 	.textures = textures.has_value () ? parseTextureMap (textures.value ()) : TextureMap {},
+	.usertextures = usertextures.has_value () ? parseTextureMap (usertextures.value ()) : TextureMap {},
     });
 }
 

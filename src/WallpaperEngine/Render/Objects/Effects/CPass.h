@@ -194,6 +194,13 @@ private:
      */
     std::map<int, std::shared_ptr<const TextureProvider>> m_textures = {};
 
+    /**
+     * Texture slots backed by a dynamic system texture (e.g. "$mediaThumbnail"),
+     * kept by name so they can be re-resolved every frame instead of being frozen
+     * to whatever was resolved at setup time.
+     */
+    std::map<int, std::string> m_dynamicTextures = {};
+
     Render::Shaders::Shader* m_shader = nullptr;
 
 	    std::shared_ptr<const CFBO> m_drawTo = nullptr;

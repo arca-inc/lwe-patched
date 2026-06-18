@@ -272,7 +272,17 @@ void CPass::bindTextureOverrides (
     uint32_t currentTexture, std::shared_ptr<const TextureProvider>& texture0
 ) const {
     for (const auto& [index, expectedTexture] : this->m_textures) {
-	auto texture = expectedTexture == nullptr ? (this->m_previousInput ?: this->m_input) : expectedTexture;
+	std::shared_ptr<const TextureProvider> texture;
+	if (const auto dyn = this->m_dynamicTextures.find (index); dyn != this->m_dynamicTextures.end ()) {
+	    // Re-resolve the live media thumbnail; falls back to the snapshot on failure.
+	    try {
+		texture = this->getContext ().resolveTexture (dyn->second);
+	    } catch (std::runtime_error&) {
+		texture = expectedTexture;
+	    }
+	} else {
+	    texture = expectedTexture == nullptr ? (this->m_previousInput ?: this->m_input) : expectedTexture;
+	}
 	if (texture == nullptr) {
 	    continue;
 	}
@@ -733,6 +743,38 @@ void CPass::setupTextureUniforms () {
 	    sLog.error ("Cannot resolve texture ", textureName, " for override ", ex.what ());
 	}
     }
+
+    // override user-texture slots (e.g. "$mediaThumbnail" bound to a blend slot for
+    // now-playing album art); resolveTexture maps the system name to the live cover.
+    for (const auto& [index, textureName] : this->m_override.usertextures) {
+	try {
+	    if (textureName.find ("_rt_") == 0 || textureName.find ("_alias_") == 0) {
+		this->m_textures[index] = this->resolveFBOOrPrevious (textureName);
+	    } else if (!textureName.empty ()) {
+		this->m_textures[index] = this->getContext ().resolveTexture (textureName);
+	    }
+	} catch (std::runtime_error& ex) {
+	    sLog.error ("Cannot resolve user texture ", textureName, " for override ", ex.what ());
+	}
+    }
+
+    // Record which slots are backed by a dynamic media thumbnail so they can be
+    // re-resolved every frame (the now-playing cover changes at runtime and may not
+    // even exist yet at setup time). Mirror the precedence above: a later static
+    // override on the same slot wins and clears the dynamic mark.
+    const auto markDynamic = [this] (const TextureMap& map) {
+	for (const auto& [index, name] : map) {
+	    if (name == "$mediaThumbnail" || name == "$mediaPreviousThumbnail") {
+		this->m_dynamicTextures[index] = name;
+	    } else if (!name.empty ()) {
+		this->m_dynamicTextures.erase (index);
+	    }
+	}
+    };
+    markDynamic (this->m_pass.textures);
+    markDynamic (this->m_pass.usertextures);
+    markDynamic (this->m_override.textures);
+    markDynamic (this->m_override.usertextures);
 
     // binds are set last as they're the most important to be set
     for (const auto& [index, bind] : this->m_binds) {

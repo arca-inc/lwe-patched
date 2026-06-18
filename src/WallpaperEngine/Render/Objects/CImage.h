@@ -128,6 +128,9 @@ private:
     glm::vec4 m_pos = {};
     glm::vec3 m_sceneCenter = {};
     glm::vec2 m_size = {};
+    // Backing store for g_Color4 so it can carry the object's opacity in its alpha
+    // channel (shaders like genericimage4 read opacity from g_Color4.a, not g_Alpha).
+    mutable glm::vec4 m_color4 = {};
 
     bool m_initialized = false;
 

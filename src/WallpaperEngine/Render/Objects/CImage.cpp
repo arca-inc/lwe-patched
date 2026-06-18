@@ -988,7 +988,15 @@ const float& CImage::getAlpha () const { return this->m_image.alpha->value->getF
 
 const glm::vec3& CImage::getColor () const { return this->m_image.color->value->getVec3 (); }
 
-const glm::vec4& CImage::getColor4 () const { return this->m_image.color->value->getVec4 (); }
+const glm::vec4& CImage::getColor4 () const {
+    // g_Color4 must carry the object's opacity in its alpha channel: genericimage4
+    // (and friends) multiply the sampled texel by g_Color4 and never read g_Alpha,
+    // so an object set to alpha 0 (e.g. the cafe's invisible purple "Image Backframe")
+    // would otherwise render fully opaque. Fold the object alpha into the colour's own.
+    const glm::vec4& c = this->m_image.color->value->getVec4 ();
+    this->m_color4 = glm::vec4 (c.r, c.g, c.b, c.a * this->m_image.alpha->value->getFloat ());
+    return this->m_color4;
+}
 
 const glm::vec3& CImage::getCompositeColor () const { return this->m_image.color->value->getVec3 (); }
 

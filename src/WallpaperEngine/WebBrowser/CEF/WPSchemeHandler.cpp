@@ -28,7 +28,18 @@ bool WPSchemeHandler::Open (CefRefPtr<CefRequest> request, bool& handle_request,
     }
 
     const std::string host = CefString (&parts.host);
-    const std::string path = CefString (&parts.path);
+
+    // CEF hands us the path percent-encoded. Workshop wallpapers routinely reference
+    // files whose names contain spaces and other reserved characters (e.g. the framework
+    // folder "Arthesian Library/..."), which the browser requests as "Arthesian%20Library/...".
+    // The asset loader needs the real on-disk name, so decode everything except the path
+    // separators (a literal "%2F" must not collapse into a directory boundary). Without this
+    // those scripts 404, leaving globals like ARTHESIAN undefined and the page blank.
+    const CefString decodedPath = CefURIDecode (
+	CefString (&parts.path), true,
+	static_cast<cef_uri_unescape_rule_t> (UU_SPACES | UU_URL_SPECIAL_CHARS_EXCEPT_PATH_SEPARATORS)
+    );
+    const std::string path = decodedPath;
 
     const std::string file = path.substr (1);
 

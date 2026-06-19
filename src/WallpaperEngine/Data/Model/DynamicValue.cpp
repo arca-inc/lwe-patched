@@ -3,6 +3,12 @@
 
 using namespace WallpaperEngine::Data::Model;
 
+static std::string f2s (float v) {
+    std::string s = std::to_string (v);
+    for (char& c : s) if (c == ',') c = '.';
+    return s;
+}
+
 DynamicValue::DynamicValue (const glm::ivec4& value) { this->DynamicValue::update (value); }
 
 DynamicValue::DynamicValue (const glm::ivec3& value) { this->DynamicValue::update (value); }
@@ -56,19 +62,19 @@ DynamicValue::UnderlyingType DynamicValue::getType () const { return this->m_typ
 std::string DynamicValue::toString () const {
     switch (this->m_type) {
 	case UnderlyingType::Float:
-	    return std::to_string (this->m_float);
+	    return f2s (this->m_float);
 	case UnderlyingType::Int:
 	    return std::to_string (this->m_int);
 	case UnderlyingType::Boolean:
 	    return std::to_string (this->m_bool);
 	case UnderlyingType::Vec2:
-	    return std::to_string (this->m_vec2.x) + ", " + std::to_string (this->m_vec2.y);
+	    return f2s (this->m_vec2.x) + ", " + f2s (this->m_vec2.y);
 	case UnderlyingType::Vec3:
-	    return std::to_string (this->m_vec3.x) + ", " + std::to_string (this->m_vec3.y) + ", "
-		+ std::to_string (this->m_vec3.z);
+	    return f2s (this->m_vec3.x) + ", " + f2s (this->m_vec3.y) + ", "
+		+ f2s (this->m_vec3.z);
 	case UnderlyingType::Vec4:
-	    return std::to_string (this->m_vec4.x) + ", " + std::to_string (this->m_vec4.y) + ", "
-		+ std::to_string (this->m_vec4.z) + ", " + std::to_string (this->m_vec4.w);
+	    return f2s (this->m_vec4.x) + ", " + f2s (this->m_vec4.y) + ", "
+		+ f2s (this->m_vec4.z) + ", " + f2s (this->m_vec4.w);
 	case UnderlyingType::IVec2:
 	    return std::to_string (this->m_ivec2.x) + ", " + std::to_string (this->m_ivec2.y);
 	case UnderlyingType::IVec3:

@@ -37,7 +37,7 @@ bool WPSchemeHandler::Open (CefRefPtr<CefRequest> request, bool& handle_request,
     // those scripts 404, leaving globals like ARTHESIAN undefined and the page blank.
     const CefString decodedPath = CefURIDecode (
 	CefString (&parts.path), true,
-	static_cast<cef_uri_unescape_rule_t> (UU_SPACES | UU_URL_SPECIAL_CHARS_EXCEPT_PATH_SEPARATORS)
+	static_cast<cef_uri_unescape_rule_t> (UU_URL_SPECIAL_CHARS_EXCEPT_PATH_SEPARATORS)
     );
     const std::string path = decodedPath;
 

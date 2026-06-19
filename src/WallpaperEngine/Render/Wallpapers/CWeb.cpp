@@ -7,6 +7,7 @@
 #include "WallpaperEngine/Audio/AudioContext.h"
 #include "WallpaperEngine/Audio/Drivers/Recorders/PlaybackRecorder.h"
 #include "WallpaperEngine/Data/Model/Project.h"
+#include "WallpaperEngine/Data/Model/Property.h"
 #include "WallpaperEngine/Data/Model/Wallpaper.h"
 #include "WallpaperEngine/Media/MediaProvider.h"
 
@@ -75,8 +76,30 @@ CWeb::CWeb (
     browserSettings.windowless_frame_rate = std::min (60, context.getApp ().getContext ().settings.render.maximumFPS);
 
     this->m_client = new WebBrowser::CEF::BrowserClient (m_renderHandler);
-    // Pass property overrides so OnLoadEnd can call wallpaperPropertyListener.applyUserProperties
-    this->m_client->setProperties (context.getApp ().getContext ().settings.general.properties);
+    // Pass property overrides so OnLoadEnd can call wallpaperPropertyListener.applyUserProperties.
+    // The launcher only passes a subset of properties via --set-property, but web wallpapers
+    // often gate what they render on a property's *default* (e.g. the CORSAIR collection waits
+    // for its "scene" combo, defaulting to "circuit", before drawing anything — without it the
+    // page stays black). Seed the page with every declared property at its default, then let the
+    // CLI overrides win.
+    std::map<std::string, std::string> webProperties;
+    for (const auto& [name, prop] : this->getWeb ().project.properties) {
+	if (prop == nullptr) {
+	    continue;
+	}
+	// DynamicValue prints vectors comma-separated ("0, 0, 0"); Wallpaper Engine properties
+	// are space-separated ("0 0 0"), so normalise for the page's property parser.
+	std::string value = prop->toString ();
+	for (std::size_t pos = value.find (", "); pos != std::string::npos; pos = value.find (", ", pos)) {
+	    value.replace (pos, 2, " ");
+	    pos += 1;
+	}
+	webProperties[name] = value;
+    }
+    for (const auto& [key, value] : context.getApp ().getContext ().settings.general.properties) {
+	webProperties[key] = value;
+    }
+    this->m_client->setProperties (webProperties);
     // use the custom scheme for the wallpaper's files
     const std::string htmlURL = WPSchemeHandlerFactory::generateSchemeName (this->getWeb ().project.workshopId)
 	+ "://root/" + this->getWeb ().filename;

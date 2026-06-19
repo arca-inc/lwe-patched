@@ -1,3 +1,13 @@
+> [!IMPORTANT]
+> **This is the `wepapered` patched fork of [linux-wallpaperengine](https://github.com/Almamu/linux-wallpaperengine).**
+> It is used as a submodule by [wepapered](https://github.com/arca-inc/wepapered) and contains patches
+> that are specific to that project (Hyprland daemon integration, shader cache, passthrough FBO fixes,
+> CEF web wallpaper improvements, and more). It is **not** intended as a general-purpose drop-in
+> replacement for the upstream project — please use the upstream if you don't need wepapered.
+> See [CONTRIBUTORS.md](CONTRIBUTORS.md) for attribution details.
+
+---
+
 <p align="center">
 	<a href="https://github.com/Almamu/linux-wallpaperengine/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Almamu/linux-wallpaperengine" /></a>
     <a href="https://github.com/Almamu/linux-wallpaperengine/actions?query=branch%3Amain"><img src="https://img.shields.io/github/actions/workflow/status/Almamu/linux-wallpaperengine/cmake.yml?branch=main" /></a>
@@ -341,3 +351,13 @@ We'll be looking at improving this in the future, but for now it can be a useful
 
 - [RePKG](https://github.com/notscuffed/repkg) – for texture flag insights
 - [RenderDoc](https://github.com/baldurk/renderdoc) – the best OpenGL debugger out there!
+
+---
+
+## 🔀 Upstream
+
+This fork tracks [Almamu/linux-wallpaperengine](https://github.com/Almamu/linux-wallpaperengine).
+All patches are applied on top of upstream commits; the `wepapered` branch diverges intentionally
+and is **not** meant to be merged back upstream.
+
+See [CONTRIBUTORS.md](CONTRIBUTORS.md) for the full contributor list.

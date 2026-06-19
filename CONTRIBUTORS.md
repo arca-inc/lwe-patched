@@ -13,8 +13,8 @@ The patches in the `wepapered` branch are developed and maintained as part of th
 
 | Contributor | Role |
 |---|---|
-| [@warmadon](https://github.com/warmadon) | Project lead, design & requirements |
-| [@david](https://github.com/david) | Development & engineering |
+| [@warmadon](https://github.com/warmadon) (Paul Claudon) | Project lead, design & requirements |
+| David Gheghea | Development & engineering |
 
 ---
 

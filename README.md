@@ -24,128 +24,19 @@ Bring **Wallpaper Engine**-style live wallpapers to Linux! This project allows y
 
 ---
 
-## 📦 System Requirements
+## 📦 Installation
 
-To compile and run this, you'll need:
-
-- OpenGL 3.3 support
-- CMake
-- LZ4, Zlib
-- SDL2
-- FFmpeg
-- X11 or Wayland
-- Xrandr (for X11)
-- GLFW3, GLEW, GLUT, GLM
-- MPV
-- PulseAudio
-- FFTW3
-
-Install the required dependencies on Ubuntu/Debian-based systems:
-
-### Ubuntu 22.04
-```bash
-sudo apt-get update
-sudo apt-get install build-essential cmake libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl-dev libglew-dev freeglut3-dev libsdl2-dev liblz4-dev libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libxxf86vm-dev libglm-dev libglfw3-dev libmpv-dev mpv libmpv1 libpulse-dev libpulse0 libfftw3-dev libfreetype-dev
-```
-
-### Ubuntu 24.04
-```bash
-sudo apt-get update
-sudo apt-get install build-essential cmake libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl-dev libglew-dev freeglut3-dev libsdl2-dev liblz4-dev libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libxxf86vm-dev libglm-dev libglfw3-dev libmpv-dev mpv libmpv2 libpulse-dev libpulse0 libfftw3-dev libfreetype-dev
-```
-
-### Alt linux
-```bash
-sudo epm update
-sudo epm install gcc-c++ make cmake libXrandr-devel libXinerama-devel libXcursor-devel libXi-devel libGL-devel libGLEW-devel freeglut-devel libSDL2-devel liblz4-devel libavcodec-devel libavformat-devel libavutil-devel libswscale-devel libXxf86vm-devel libglm-devel libglfw3-devel libmpv-devel mpv libpulseaudio-devel libpulseaudio libfftw3-devel libpng-devel libffi-devel libswresample-devel libgmpxx-devel
-```
-
-Install the required dependencies on RHEL/Fedora-based systems:
-
-### Fedora 42
-```bash
-sudo dnf update
-sudo dnf install gcc g++ cmake libXrandr-devel libXinerama-devel libXcursor-devel libXi-devel mesa-libGL-devel glew-devel freeglut-devel SDL2-devel lz4-devel ffmpeg ffmpeg-free-devel libXxf86vm-devel glm-devel glfw-devel mpv mpv-devel pulseaudio-libs-devel fftw-devel gmp-devel
-```
+> [!IMPORTANT]
+> **This fork is not distributed as a standalone binary.**
+> Installation is handled exclusively by [wepapered](https://github.com/arca-inc/wepapered), which
+> builds this submodule as part of its own build process and manages the binary lifecycle via its
+> daemon.
+>
+> **Do not clone or build this repository directly.** Please follow the
+> [wepapered installation guide](https://github.com/arca-inc/wepapered#installation) instead.
 
 ---
 
-## 🐧 Arch Linux Users
-
-You can install this directly from the AUR using your favorite AUR helper:
-
-```bash
-yay -S linux-wallpaperengine-git
-```
-
-> This installs the latest development version.
-
-**Note:** You’ll still need assets from the official Wallpaper Engine (via Steam). See below for details.
-
----
-
-## 🚀 Getting Started
-
-### 1. Get Wallpaper Engine Assets
-
-You **must own and install Wallpaper Engine** via Steam. This provides the required assets used by many backgrounds.
-
-Right now the application will automatically detect everything for you as long as the official Wallpaper Engine is installed
-in one of these locations:
-
-```
-~/.steam/steam/steamapps/common
-~/.local/share/Steam/steamapps/common
-~/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/common
-~/snap/steam/common/.local/share/Steam/steamapps/common
-```
-
-> ✅ If Wallpaper Engine is installed in one of these paths, the assets will be detected automatically!
-
----
-
-#### ❗ If Assets Aren’t Found Automatically
-
-If the assets are not detected automatically, you'll see a message like this:
-```
-Cannot find a valid assets folder, resolved to 'assets'
-```
-
-You can copy the `assets` folder manually:
-
-1. In Steam, right-click **Wallpaper Engine** → **Manage** → **Browse local files**
-2. Copy the `assets` folder
-3. Paste it into the same folder where the `linux-wallpaperengine` binary is located (build/output if you followed the build instructions)
-
-Another option is to specify the path manually with the `--assets-dir` option, like this:
-```bash
-linux-wallpaperengine --assets-dir /path/to/assets
-```
----
-
-### 2. Build from Source
-
-> ⚠️ If you installed the AUR package mentioned before, you can skip this step.
-
-Clone the repo:
-
-```bash
-git clone --recurse-submodules https://github.com/Almamu/linux-wallpaperengine.git
-cd linux-wallpaperengine
-```
-
-Build it:
-
-```bash
-mkdir build && cd build
-cmake -DCMAKE_BUILD_TYPE='Release' ..
-make
-```
-
-Once the build process is finished, this should create a new `output` folder containing the app and all the required
-support files to run.
-
----
 
 ## 🧪 Usage
 

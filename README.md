@@ -9,7 +9,7 @@
 ---
 
 <p align="center">
-	<a href="https://github.com/arca-inc/lwe-patched/blob/wepapered/LICENSE"><img src="https://img.shields.io/github/license/arca-inc/lwe-patched" /></a>
+	<a href="https://github.com/arca-inc/lwe-patched/blob/wepapered/LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" /></a>
 	<a href="https://github.com/arca-inc/lwe-patched/graphs/commit-activity"><img src="https://img.shields.io/github/commit-activity/m/arca-inc/lwe-patched?branch=wepapered" /></a>
 	<a href="https://github.com/arca-inc/lwe-patched/graphs/contributors"><img src="https://img.shields.io/github/contributors/arca-inc/lwe-patched" /></a>
 	<a href="https://github.com/arca-inc/lwe-patched/issues"><img src="https://img.shields.io/github/issues-raw/arca-inc/lwe-patched" /></a>

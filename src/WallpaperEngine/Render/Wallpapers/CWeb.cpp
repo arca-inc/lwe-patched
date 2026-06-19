@@ -13,6 +13,8 @@
 
 #include <chrono>
 #include <cmath>
+#include <filesystem>
+#include <vector>
 #include <cstdio>
 #include <cstdlib>
 #include <future>
@@ -132,6 +134,45 @@ CWeb::CWeb (
 	}
     }
     this->m_client->setProperties (webProperties);
+
+    // Enumerate directory-backed properties (slideshow folders live under "directories/<name>"
+    // in the preset). Wallpaper Engine exposes their contents through
+    // wallpaperRequestRandomFileForProperty; collect the files here so BrowserClient can hand
+    // the list to the page on load. Paths stay relative to the wallpaper root so the page can
+    // load them straight through the wp:// scheme.
+    const std::string& presetDir = context.getApp ().getContext ().settings.general.presetDir;
+    if (!presetDir.empty ()) {
+	std::map<std::string, std::vector<std::string>> directoryFiles;
+	const std::filesystem::path directoriesRoot = std::filesystem::path (presetDir) / "directories";
+	std::error_code ec;
+	if (std::filesystem::is_directory (directoriesRoot, ec)) {
+	    for (const auto& dir : std::filesystem::directory_iterator (directoriesRoot, ec)) {
+		if (!dir.is_directory ()) {
+		    continue;
+		}
+		const std::string property = dir.path ().filename ().string ();
+		std::vector<std::string> files;
+		for (const auto& file : std::filesystem::directory_iterator (dir.path (), ec)) {
+		    if (file.is_regular_file ()) {
+			// Hand back an absolute filesystem path with the leading slash removed:
+			// these wallpapers build the image URL as "file:///" + path (a Windows-ism,
+			// where paths start "C:/"), so on Linux the result must be "file:///home/..."
+			// rather than "file:////home/...". CEF loads it directly (web security is off).
+			std::string absolute = file.path ().string ();
+			if (!absolute.empty () && absolute.front () == '/') {
+			    absolute.erase (0, 1);
+			}
+			files.push_back (absolute);
+		    }
+		}
+		if (!files.empty ()) {
+		    std::sort (files.begin (), files.end ());
+		    directoryFiles.emplace (property, std::move (files));
+		}
+	    }
+	}
+	this->m_client->setDirectoryFiles (directoryFiles);
+    }
     // use the custom scheme for the wallpaper's files
     const std::string htmlURL = WPSchemeHandlerFactory::generateSchemeName (this->getWeb ().project.workshopId)
 	+ "://root/" + this->getWeb ().filename;

@@ -32,10 +32,15 @@ static const char* const kMediaApiBootstrap =
     // Audio-reactive listener: store the page's callback; the browser process pushes
     // the live FFT spectrum into window.__lweMedia.audio() each frame (see CWeb).
     "window.wallpaperRegisterAudioListener=function(cb){M.cbAudio=cb;};"
-    // random-file global is not implemented on the CEF backend; stub it so wallpapers
-    // that call it at startup don't throw.
-    "var noop=function(){};"
-    "window.wallpaperRequestRandomFileForProperty=window.wallpaperRequestRandomFileForProperty||noop;"
+    // Directory properties (slideshow folders, etc.): the browser process enumerates the
+    // folder and pushes its file list via __lweMedia.dir(prop,list). Each call to
+    // wallpaperRequestRandomFileForProperty then hands back a fresh random file from that
+    // list (matching Wallpaper Engine, where the page drives slideshow rotation).
+    "M.dirFiles={};M.dirCb={};"
+    "function pickRandom(prop){var f=M.dirFiles[prop];var c=M.dirCb[prop];"
+    "if(f&&f.length&&typeof c==='function'){try{c(prop,f[Math.floor(Math.random()*f.length)]);}"
+    "catch(e){if(window.console)console.log('[LWE] random-file callback error: '+e);}}}"
+    "window.wallpaperRequestRandomFileForProperty=function(prop,cb){M.dirCb[prop]=cb;pickRandom(prop);};"
     "function fire(cbKey,lastKey,d){M[lastKey]=d;var c=M[cbKey];"
     "if(typeof c==='function'){try{c(d);}catch(e){if(window.console)console.log('[LWE] media listener error: '+e);}}}"
     "window.__lweMedia={"
@@ -44,6 +49,9 @@ static const char* const kMediaApiBootstrap =
     "thumb:function(d){fire('cbThumb','lastThumb',d);},"
     "time:function(d){fire('cbTime','lastTime',d);},"
     "play:function(d){fire('cbPlay','lastPlay',d);},"
+    // A directory property's file list was (re)enumerated natively; store it and, if the
+    // page already asked for a file from this property, satisfy that request immediately.
+    "dir:function(prop,list){M.dirFiles[prop]=list;pickRandom(prop);},"
     // Audio has no 'last' replay (it streams every frame); just invoke the callback.
     "audio:function(a){var c=M.cbAudio;if(typeof c==='function'){"
     "try{c(a);}catch(e){if(window.console)console.log('[LWE] audio listener error: '+e);}}}};"

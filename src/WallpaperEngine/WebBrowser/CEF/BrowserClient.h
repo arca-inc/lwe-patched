@@ -7,6 +7,7 @@
 #include <atomic>
 #include <map>
 #include <string>
+#include <vector>
 
 namespace WallpaperEngine::WebBrowser::CEF {
 class BrowserClient : public CefClient, public CefDisplayHandler, public CefLifeSpanHandler, public CefLoadHandler {
@@ -36,6 +37,10 @@ public:
     // Properties to inject via wallpaperPropertyListener.applyUserProperties on load
     void setProperties (const std::map<std::string, std::string>& props) { m_properties = props; }
 
+    // File lists for directory-backed properties (e.g. slideshow folders), pushed to the
+    // page on load so wallpaperRequestRandomFileForProperty can hand back real files.
+    void setDirectoryFiles (const std::map<std::string, std::vector<std::string>>& dirs) { m_directoryFiles = dirs; }
+
     CefRefPtr<CefRenderHandler> m_renderHandler = nullptr;
 
     IMPLEMENT_REFCOUNTING (BrowserClient);
@@ -45,5 +50,6 @@ private:
     std::atomic<bool> m_closed {false};
     CefRefPtr<CefBrowser> m_browser;
     std::map<std::string, std::string> m_properties;
+    std::map<std::string, std::vector<std::string>> m_directoryFiles;
 };
 } // namespace WallpaperEngine::WebBrowser::CEF

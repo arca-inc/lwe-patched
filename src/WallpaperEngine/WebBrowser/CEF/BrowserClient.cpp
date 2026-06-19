@@ -84,4 +84,24 @@ void BrowserClient::OnLoadEnd (CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame
     js << "});})();";
 
     frame->ExecuteJavaScript (js.str (), frame->GetURL (), 0);
+
+    // Push the file list for each directory-backed property (slideshow folders, etc.). The
+    // page's wallpaperRequestRandomFileForProperty draws from these lists; pushed once on load
+    // so the slideshow has frames without re-firing (and re-randomising) every frame.
+    for (const auto& [prop, files] : m_directoryFiles) {
+        if (files.empty ()) {
+            continue;
+        }
+        std::ostringstream dirJs;
+        dirJs << "(function(){if(!window.__lweMedia||!window.__lweMedia.dir)return;"
+              << "window.__lweMedia.dir(\"" << escapeJsString (prop) << "\",[";
+        bool firstFile = true;
+        for (const auto& f : files) {
+            if (!firstFile) dirJs << ",";
+            dirJs << "\"" << escapeJsString (f) << "\"";
+            firstFile = false;
+        }
+        dirJs << "]);})();";
+        frame->ExecuteJavaScript (dirJs.str (), frame->GetURL (), 0);
+    }
 }

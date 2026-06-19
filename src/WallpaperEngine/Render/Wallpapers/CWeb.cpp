@@ -76,28 +76,60 @@ CWeb::CWeb (
     browserSettings.windowless_frame_rate = std::min (60, context.getApp ().getContext ().settings.render.maximumFPS);
 
     this->m_client = new WebBrowser::CEF::BrowserClient (m_renderHandler);
-    // Pass property overrides so OnLoadEnd can call wallpaperPropertyListener.applyUserProperties.
-    // The launcher only passes a subset of properties via --set-property, but web wallpapers
-    // often gate what they render on a property's *default* (e.g. the CORSAIR collection waits
-    // for its "scene" combo, defaulting to "circuit", before drawing anything — without it the
-    // page stays black). Seed the page with every declared property at its default, then let the
-    // CLI overrides win.
+    // Build the property set for wallpaperPropertyListener.applyUserProperties. Two things matter:
+    //   1. Seed *every* declared property at its default — web wallpapers often gate rendering on a
+    //      default (e.g. the CORSAIR collection waits for its "scene" combo "circuit" before drawing).
+    //   2. Emit each value with its real JS type. Wallpaper Engine hands booleans as booleans and
+    //      sliders as numbers; pages branch on `property.value` directly, so a boolean sent as the
+    //      string "0" reads truthy and wrongly enables debug overlays / disables backgrounds. So the
+    //      values are pre-formatted here into JS literals (BrowserClient emits them verbatim).
+    // Command-line overrides win over defaults.
+    using Model = WallpaperEngine::Data::Model::DynamicValue;
+    const auto& overrides = context.getApp ().getContext ().settings.general.properties;
+    const auto jsEscape = [] (const std::string& in) {
+	std::string out;
+	out.reserve (in.size () + 2);
+	for (const char c : in) {
+	    switch (c) {
+		case '\\': out += "\\\\"; break;
+		case '"': out += "\\\""; break;
+		case '\n': out += "\\n"; break;
+		case '\r': out += "\\r"; break;
+		default: out += c;
+	    }
+	}
+	return out;
+    };
     std::map<std::string, std::string> webProperties;
     for (const auto& [name, prop] : this->getWeb ().project.properties) {
 	if (prop == nullptr) {
 	    continue;
 	}
-	// DynamicValue prints vectors comma-separated ("0, 0, 0"); Wallpaper Engine properties
-	// are space-separated ("0 0 0"), so normalise for the page's property parser.
-	std::string value = prop->toString ();
-	for (std::size_t pos = value.find (", "); pos != std::string::npos; pos = value.find (", ", pos)) {
-	    value.replace (pos, 2, " ");
+	const auto it = overrides.find (name);
+	std::string raw = it != overrides.end () ? it->second : prop->toString ();
+	// DynamicValue prints vectors comma-separated ("0, 0, 0"); WE uses spaces ("0 0 0").
+	for (std::size_t pos = raw.find (", "); pos != std::string::npos; pos = raw.find (", ", pos)) {
+	    raw.replace (pos, 2, " ");
 	    pos += 1;
 	}
-	webProperties[name] = value;
+	switch (prop->getType ()) {
+	    case Model::Boolean:
+		webProperties[name] = (raw == "1" || raw == "true" || raw == "True") ? "true" : "false";
+		break;
+	    case Model::Float:
+	    case Model::Int:
+		webProperties[name] = raw.empty () ? "0" : raw;
+		break;
+	    default:
+		webProperties[name] = "\"" + jsEscape (raw) + "\"";
+		break;
+	}
     }
-    for (const auto& [key, value] : context.getApp ().getContext ().settings.general.properties) {
-	webProperties[key] = value;
+    // Any command-line override without a declared property (unusual) is forwarded as a string.
+    for (const auto& [key, value] : overrides) {
+	if (!webProperties.contains (key)) {
+	    webProperties[key] = "\"" + jsEscape (value) + "\"";
+	}
     }
     this->m_client->setProperties (webProperties);
     // use the custom scheme for the wallpaper's files

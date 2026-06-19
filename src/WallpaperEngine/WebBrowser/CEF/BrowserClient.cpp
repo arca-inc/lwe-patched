@@ -67,7 +67,9 @@ void BrowserClient::OnLoadEnd (CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame
 
     if (m_properties.empty ()) return;
 
-    // Build wallpaperPropertyListener.applyUserProperties({key:{value:"val"},...})
+    // Build wallpaperPropertyListener.applyUserProperties({key:{value:<literal>},...}).
+    // Values arrive pre-formatted as JS literals (booleans/numbers unquoted, strings already
+    // quoted and escaped — see CWeb) so pages that branch on property.value see the right type.
     std::ostringstream js;
     js << "(function(){"
        << "var p=window.wallpaperPropertyListener;"
@@ -76,7 +78,7 @@ void BrowserClient::OnLoadEnd (CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame
     bool first = true;
     for (const auto& [k, v] : m_properties) {
         if (!first) js << ",";
-        js << "\"" << escapeJsString (k) << "\":{\"value\":\"" << escapeJsString (v) << "\"}";
+        js << "\"" << escapeJsString (k) << "\":{\"value\":" << v << "}";
         first = false;
     }
     js << "});})();";

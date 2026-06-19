@@ -261,11 +261,24 @@ CImage::CImage (Wallpapers::CScene& scene, const Image& image) :
     nameA << "_rt_imageLayerComposite_" << this->getImage ().id << "_a";
     nameB << "_rt_imageLayerComposite_" << this->getImage ().id << "_b";
 
+    // A passthrough layer copies the whole framebuffer through its composite FBOs and writes
+    // it back. Sizing those composites to the object's own geometry (e.g. a 150x150 masked
+    // "pulse" layer) forces the entire scene to round-trip through a tiny buffer and come
+    // back blurred. Passthrough composites must match the scene framebuffer resolution.
+    glm::vec2 compositeSize = size;
+    if (this->getImage ().model->passthrough) {
+	const auto sceneFBO = scene.getFBO ();
+	compositeSize = { static_cast<float> (sceneFBO->getRealWidth ()),
+			  static_cast<float> (sceneFBO->getRealHeight ()) };
+    }
+
     this->m_currentMainFBO = this->m_mainFBO = scene.create (
-	nameA.str (), TextureFormat_ARGB8888, this->m_texture->getFlags (), 1, { size.x, size.y }, { size.x, size.y }
+	nameA.str (), TextureFormat_ARGB8888, this->m_texture->getFlags (), 1, { compositeSize.x, compositeSize.y },
+	{ compositeSize.x, compositeSize.y }
     );
     this->m_currentSubFBO = this->m_subFBO = scene.create (
-	nameB.str (), TextureFormat_ARGB8888, this->m_texture->getFlags (), 1, { size.x, size.y }, { size.x, size.y }
+	nameB.str (), TextureFormat_ARGB8888, this->m_texture->getFlags (), 1, { compositeSize.x, compositeSize.y },
+	{ compositeSize.x, compositeSize.y }
     );
 
     if (this->getImage().model->passthrough) {

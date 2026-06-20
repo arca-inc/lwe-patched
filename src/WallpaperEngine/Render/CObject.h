@@ -2,6 +2,9 @@
 
 #include <string>
 
+#include <glm/vec2.hpp>
+#include <glm/vec3.hpp>
+
 #include "WallpaperEngine/Render/Helpers/ContextAware.h"
 
 #include "WallpaperEngine/Render/Wallpapers/CScene.h"
@@ -40,6 +43,18 @@ public:
     [[nodiscard]] const AssetLocator& getAssetLocator () const;
     [[nodiscard]] int getId () const;
     [[nodiscard]] const Object& getObject () const;
+
+    // Absolute (parent-composed) transform of an object. WE objects can be parented
+    // (e.g. a clock/date text nested under a chalkboard group); their own origin/scale/
+    // angle are relative to the parent. Walks the parent chain and composes the
+    // transforms so renderers place nested objects correctly. Shared by CImage and
+    // CText so both honour parenting identically.
+    struct ResolvedTransform {
+	glm::vec3 origin;
+	glm::vec3 scale;
+	float angle;
+    };
+    [[nodiscard]] ResolvedTransform resolveTransform (const Object& object, int depth = 0) const;
 
 private:
     Wallpapers::CScene& m_scene;

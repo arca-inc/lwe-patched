@@ -538,8 +538,12 @@ void CText::render () {
 
     const glm::vec4 color = m_text.color->value->getVec4 ();
     const float alpha = m_text.alpha->value->getFloat ();
-    const glm::vec3 scale = m_text.scale->value->getVec3 ();
-    const glm::vec3 origin = m_text.origin->value->getVec3 ();
+    // Resolve the parent-composed transform (same helper CImage uses) so text nested
+    // under a group — e.g. the date/now-playing layers parented to a chalkboard — is
+    // positioned and scaled relative to its parent instead of at its raw local origin.
+    const auto transform = resolveTransform (m_text);
+    const glm::vec3 scale = transform.scale;
+    const glm::vec3 origin = transform.origin;
 
     // Place text with the *same* origin convention as CImage so a text layer and an
     // image layer that share an origin land at the same spot on screen. CImage maps

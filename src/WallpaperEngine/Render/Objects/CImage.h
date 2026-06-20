@@ -64,14 +64,6 @@ protected:
 
     void updateScreenSpacePosition ();
 
-    struct ResolvedTransform {
-	glm::vec3 origin;
-	glm::vec3 scale;
-	float angle;
-    };
-
-    [[nodiscard]] ResolvedTransform resolveTransform (const WallpaperEngine::Data::Model::Object& object, int depth = 0) const;
-
 private:
     bool loadPuppetMesh (const glm::vec2& size);
     void updatePuppetPositionBuffer (const glm::vec2& size);

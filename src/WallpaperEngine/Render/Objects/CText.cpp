@@ -517,17 +517,19 @@ void CText::render () {
     const glm::vec3 scale = m_text.scale->value->getVec3 ();
     const glm::vec3 origin = m_text.origin->value->getVec3 ();
 
-    // WE uses a Y-down coordinate system (origin at top-left, y increases downward).
-    // The final FBO is presented to screen with vflip=true on Wayland/GLFW, which maps
-    // GL y- to screen top and GL y+ to screen bottom. This effectively inverts Y again,
-    // so we need: gl_y = origin.y - scene_h/2  (not the CImage-style scene_h/2 - origin.y).
-    // CImage pre-compensates for X11 (no vflip) and gets corrected by the Wayland vflip.
-    // CText renders with direct vflip-aware coordinates.
+    // Place text with the *same* origin convention as CImage so a text layer and an
+    // image layer that share an origin land at the same spot on screen. CImage maps
+    // screen-space as `scene_h/2 - origin.y` (see CImage::setupForRender, m_pos.y) and
+    // is presented correctly through the camera projection + final Wayland vflip; text
+    // must use the identical mapping. The previous `origin.y - scene_h/2` flipped the
+    // sign, mirroring every text layer across the horizontal centre — e.g. a clock
+    // anchored near the bottom (origin.y small in WE's bottom-left ortho space) showed
+    // up at the top instead.
     const float scene_w = getScene ().getCamera ().getWidth ();
     const float scene_h = getScene ().getCamera ().getHeight ();
     const glm::vec3 gl_origin = {
 	origin.x - scene_w * 0.5f,
-	origin.y - scene_h * 0.5f,
+	scene_h * 0.5f - origin.y,
 	origin.z,
     };
 

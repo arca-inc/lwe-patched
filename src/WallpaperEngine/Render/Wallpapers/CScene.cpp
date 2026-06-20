@@ -384,7 +384,14 @@ void CScene::updateScriptedValues () {
 
 Camera& CScene::getCamera () const { return *this->m_camera; }
 
+glm::ivec2 CScene::getOutputSize () const { return this->m_outputSize; }
+
 void CScene::renderFrame (const glm::ivec4& viewport) {
+    // Remember the output viewport size. The scene renders into a scene-resolution
+    // FBO (e.g. 3840x2160) that is then scaled to the real output (e.g. 1920x1080);
+    // text layers need that ratio to size glyphs in output pixels (see CText).
+    this->m_outputSize = {viewport.z, viewport.w};
+
     // ensure the virtual mouse position is up to date
     this->updateMouse (viewport);
 

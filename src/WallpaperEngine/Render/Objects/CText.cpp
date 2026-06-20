@@ -1,6 +1,7 @@
 #include "CText.h"
 
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <vector>
 
@@ -485,6 +486,29 @@ void CText::render () {
     GLint prevProgram = 0;
     glGetIntegerv (GL_VERTEX_ARRAY_BINDING, &prevVao);
     glGetIntegerv (GL_CURRENT_PROGRAM, &prevProgram);
+
+    // Output-aware glyph sizing. WE specifies text size in *output* pixels, but the
+    // scene renders into a scene-resolution FBO (e.g. 3840x2160) that is then scaled
+    // down to the real output (e.g. 1920x1080). Rasterizing at pointsize would make
+    // text come out at pointsize * (outputH/sceneH) on screen — half size on a 4K
+    // scene shown at 1080p, which is why the clock looked tiny. Rasterize at
+    // pointsize * (sceneH/outputH) instead so the model scale + FBO downscale net out
+    // to the intended on-screen size, keeping glyphs crisp (no upscaling blur). The
+    // output size isn't known until the first frame, so the size is settled here.
+    {
+	const glm::ivec2 outSize = getScene ().getOutputSize ();
+	const float sceneH = getScene ().getCamera ().getHeight ();
+	const float ratio = (outSize.y > 0 && sceneH > 0.0f)
+	    ? std::max (1.0f, sceneH / static_cast<float> (outSize.y))
+	    : 1.0f;
+	const unsigned int wantPx = std::max (
+	    1u, static_cast<unsigned int> (std::lround (computeEffectivePixelSize () * ratio)));
+	if (wantPx != m_ftPixelSize) {
+	    FT_Set_Pixel_Sizes (m_ftFace, 0, static_cast<FT_UInt> (wantPx));
+	    m_ftPixelSize = wantPx;
+	    rebuildTextureFrom (m_lastRenderedText.empty () ? std::string (" ") : m_lastRenderedText);
+	}
+    }
 
     if (m_layerHandle != Scripting::kInvalidLayerHandle) {
 	auto& se = Scripting::ScriptEngine::instance ();

@@ -24,6 +24,10 @@ public:
 
     [[nodiscard]] Camera& getCamera () const;
 
+    // Real output viewport size in pixels (the scene FBO is scene-resolution and
+    // gets scaled to this). Used by CText to size glyphs in output pixels.
+    [[nodiscard]] glm::ivec2 getOutputSize () const;
+
     [[nodiscard]] const Scene& getScene () const;
 
     [[nodiscard]] int getWidth () const override;
@@ -59,6 +63,7 @@ private:
     void updateScriptedValues ();
 
     std::unique_ptr<Camera> m_camera;
+    glm::ivec2 m_outputSize = {0, 0};
     ObjectUniquePtr m_bloomObjectData;
     CObject* m_bloomObject = nullptr;
     std::map<int, CObject*> m_objects = {};

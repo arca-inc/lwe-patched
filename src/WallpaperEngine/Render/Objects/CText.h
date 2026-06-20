@@ -112,6 +112,13 @@ private:
     glm::ivec2 m_textureSize = {0, 0};
     glm::vec2 m_quadSize = {0.0f, 0.0f};
 
+    // FreeType pixel size the glyph texture is currently rasterized at. WE sizes
+    // text in *output* pixels, but the scene renders into a scene-resolution FBO
+    // that is scaled down to the output; render() rasterizes at pointsize *
+    // (sceneHeight / outputHeight) so glyphs land at their intended on-screen size
+    // (and stay crisp instead of being upscaled). Re-rasterized when this changes.
+    unsigned int m_ftPixelSize = 0;
+
     bool m_valid = false;
 };
 } // namespace WallpaperEngine::Render::Objects

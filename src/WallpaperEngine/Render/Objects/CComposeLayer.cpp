@@ -146,9 +146,14 @@ void CComposeLayer::renderChildrenToBuffer () {
 
     for (auto* child : this->m_children) {
 	if (child != nullptr) {
+	    // CImage leaves glColorMask with alpha writes disabled after its final pass and
+	    // never restores it; inside a compose buffer that corrupts the next child's
+	    // intermediate-FBO alpha (and the buffer's own alpha). Reset before each child.
+	    glColorMask (GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 	    child->render ();
 	}
     }
+    glColorMask (GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 
     scene.getCamera ().popLocalProjection ();
     scene.setComposeStopId (prevStopId);

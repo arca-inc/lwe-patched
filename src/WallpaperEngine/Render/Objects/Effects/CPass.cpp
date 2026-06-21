@@ -126,11 +126,17 @@ std::shared_ptr<const CFBO> CPass::resolveFBOOrPrevious (const std::string& name
 }
 
 void CPass::setupRenderFramebuffer () const {
+    // The final "to screen" pass follows the scene's active render target so that an image
+    // rendered inside a compose layer draws into the layer's buffer (resolved live) rather
+    // than the scene FBO captured at setup time.
+    const std::shared_ptr<const CFBO> drawTo
+	= this->m_drawsToScene ? this->m_renderable.getScene ().getFBO () : this->m_drawTo;
+
     // set the framebuffer we're drawing to
-    glBindFramebuffer (GL_FRAMEBUFFER, this->m_drawTo->getFramebuffer ());
+    glBindFramebuffer (GL_FRAMEBUFFER, drawTo->getFramebuffer ());
 
     // set proper viewport based on what we're drawing to
-    glViewport (0, 0, this->m_drawTo->getRealWidth (), this->m_drawTo->getRealHeight ());
+    glViewport (0, 0, drawTo->getRealWidth (), drawTo->getRealHeight ());
 
     // set texture blending
     switch (this->getBlendingMode ()) {
@@ -503,6 +509,8 @@ std::shared_ptr<const FBOProvider> CPass::getFBOProvider () const { return this-
 const CRenderable& CPass::getRenderable () const { return this->m_renderable; }
 
 void CPass::setDestination (std::shared_ptr<const CFBO> drawTo) { this->m_drawTo = std::move (drawTo); }
+
+void CPass::setDrawsToScene (const bool drawsToScene) { this->m_drawsToScene = drawsToScene; }
 
 void CPass::setInput (std::shared_ptr<const TextureProvider> input) { this->m_input = std::move (input); }
 

@@ -34,6 +34,11 @@ public:
 	    void render ();
 
 	    void setDestination (std::shared_ptr<const CFBO> drawTo);
+	    // Marks this as the pass that draws the final image to the scene output. Its
+	    // destination is then resolved live from the scene's active render target each
+	    // frame (set in setupPasses at setup, before compose layers exist), so the pass
+	    // follows a compose layer's buffer when the image is rendered inside one.
+	    void setDrawsToScene (bool drawsToScene);
 	    void setInput (std::shared_ptr<const TextureProvider> input);
 	    void setPreviousInput (std::shared_ptr<const TextureProvider> input);
     void setTexCoord (GLuint texcoord);
@@ -215,6 +220,7 @@ private:
     Render::Shaders::Shader* m_shader = nullptr;
 
 	    std::shared_ptr<const CFBO> m_drawTo = nullptr;
+	    bool m_drawsToScene = false;
 	    std::shared_ptr<const TextureProvider> m_input = nullptr;
 	    std::shared_ptr<const TextureProvider> m_previousInput = nullptr;
 	    glm::vec4 m_texture0Resolution = {};

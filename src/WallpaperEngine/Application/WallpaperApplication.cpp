@@ -1019,6 +1019,35 @@ std::string WallpaperApplication::inspectScene () const {
     return "{}";
 }
 
+const WallpaperEngine::Render::Wallpapers::CScene* WallpaperApplication::activeScene () const {
+    if (!this->m_renderContext) {
+	return nullptr;
+    }
+    for (const auto& [screen, wallpaper] : this->m_renderContext->getWallpapers ()) {
+	if (wallpaper && wallpaper->is<Render::Wallpapers::CScene> ()) {
+	    return wallpaper->as<Render::Wallpapers::CScene> ();
+	}
+    }
+    return nullptr;
+}
+
+void WallpaperApplication::debugIsolate (std::optional<int> id) const {
+    if (const auto* scene = this->activeScene ()) scene->debugIsolate (id);
+}
+
+void WallpaperApplication::debugSetHidden (int id, bool hidden) const {
+    if (const auto* scene = this->activeScene ()) scene->debugSetHidden (id, hidden);
+}
+
+void WallpaperApplication::debugClear () const {
+    if (const auto* scene = this->activeScene ()) scene->debugClear ();
+}
+
+bool WallpaperApplication::debugEditObject (int id, const std::string& prop, const float* vals, int count) const {
+    const auto* scene = this->activeScene ();
+    return scene != nullptr && scene->debugEditObject (id, prop, vals, count);
+}
+
 void WallpaperApplication::setDestinationFramebuffer (GLuint framebuffer) {
 	this->m_destinationFramebuffer = framebuffer;
 	// Update all wallpapers with the new destination framebuffer

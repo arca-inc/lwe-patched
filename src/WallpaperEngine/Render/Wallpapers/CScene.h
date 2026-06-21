@@ -1,5 +1,8 @@
 #pragma once
 
+#include <mutex>
+#include <optional>
+
 #include "WallpaperEngine/Render/Camera.h"
 
 #include "WallpaperEngine/Data/Model/ScriptedDynamicValue.h"
@@ -32,6 +35,20 @@ public:
     // parent, the live transform/visibility values and effect names. Read-only; safe to
     // call from the IPC thread (it only reads data-model values the render thread updates).
     [[nodiscard]] std::string toInspectorJSON () const;
+
+    // ── Debug inspector live controls (called from the IPC thread) ──────────────
+    // Isolate a single object (only it renders); std::nullopt clears the filter.
+    void debugIsolate (std::optional<int> id) const;
+    // Hide / show one object (skipObjects list).
+    void debugSetHidden (int id, bool hidden) const;
+    // Clear isolate + all hidden flags.
+    void debugClear () const;
+    // Live-edit one object's transform for testing. prop ∈
+    // {origin, scale, angle, alpha, visible}. vals carries 1 or 3 floats depending
+    // on the prop. Returns false if the id or prop is unknown. The change sticks
+    // until the wallpaper reloads, except for scripted values (clock/date text),
+    // which the script overwrites each frame.
+    bool debugEditObject (int id, const std::string& prop, const float* vals, int count) const;
 
     [[nodiscard]] const Scene& getScene () const;
 
@@ -67,8 +84,16 @@ private:
     void registerScriptedValue (const UserSettingUniquePtr& setting);
     void updateScriptedValues ();
 
+    // Looks up a data-model object by id (nullptr if not found). Used by the debug
+    // live-edit path; returns a const ref because mutation goes through the
+    // DynamicValue (whose update() is non-const even via a const UserSetting).
+    [[nodiscard]] const Object* findObjectData (int id) const;
+
     std::unique_ptr<Camera> m_camera;
     glm::ivec2 m_outputSize = {0, 0};
+    // Guards the debug objectFilter/skipObjects settings against the render loop,
+    // which reads them every frame while the IPC thread mutates them.
+    mutable std::mutex m_debugMutex;
     ObjectUniquePtr m_bloomObjectData;
     CObject* m_bloomObject = nullptr;
     std::map<int, CObject*> m_objects = {};

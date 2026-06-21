@@ -460,6 +460,95 @@ std::string CScene::toInspectorJSON () const {
     return root.dump ();
 }
 
+void CScene::debugIsolate (std::optional<int> id) const {
+    std::lock_guard<std::mutex> lk (this->m_debugMutex);
+    this->getContext ().getApp ().getContext ().settings.render.debug.objectFilter = id;
+}
+
+void CScene::debugSetHidden (int id, bool hidden) const {
+    std::lock_guard<std::mutex> lk (this->m_debugMutex);
+    auto& skip = this->getContext ().getApp ().getContext ().settings.render.debug.skipObjects;
+    const auto it = std::ranges::find (skip, id);
+    if (hidden && it == skip.end ()) {
+	skip.emplace_back (id);
+    } else if (!hidden && it != skip.end ()) {
+	skip.erase (it);
+    }
+}
+
+void CScene::debugClear () const {
+    std::lock_guard<std::mutex> lk (this->m_debugMutex);
+    auto& debug = this->getContext ().getApp ().getContext ().settings.render.debug;
+    debug.objectFilter = std::nullopt;
+    debug.skipObjects.clear ();
+}
+
+const Object* CScene::findObjectData (int id) const {
+    for (const auto& objPtr : this->getScene ().objects) {
+	if (objPtr->id == id) {
+	    return objPtr.get ();
+	}
+    }
+    return nullptr;
+}
+
+bool CScene::debugEditObject (int id, const std::string& prop, const float* vals, int count) const {
+    const Object* obj = this->findObjectData (id);
+    if (obj == nullptr) {
+	return false;
+    }
+
+    // Resolve the UserSetting backing the requested property for this object's type.
+    // const-ness doesn't propagate through unique_ptr, so update() works on a const obj.
+    const auto* img = obj->is<Image> () ? obj->as<Image> () : nullptr;
+    const auto* txt = obj->is<Text> () ? obj->as<Text> () : nullptr;
+
+    const auto setVec3 = [&] (const UserSettingUniquePtr& s) -> bool {
+	if (count < 3 || !s || !s->value) return false;
+	s->value->update (glm::vec3 (vals[0], vals[1], vals[2]));
+	return true;
+    };
+    const auto setFloat = [&] (const UserSettingUniquePtr& s) -> bool {
+	if (count < 1 || !s || !s->value) return false;
+	s->value->update (vals[0]);
+	return true;
+    };
+    const auto setBool = [&] (const UserSettingUniquePtr& s) -> bool {
+	if (count < 1 || !s || !s->value) return false;
+	s->value->update (vals[0] != 0.0f);
+	return true;
+    };
+
+    if (prop == "origin") {
+	return setVec3 (obj->origin);
+    }
+    if (prop == "scale") {
+	if (img) return setVec3 (img->scale);
+	if (txt) return setVec3 (txt->scale);
+	return setVec3 (obj->groupScale);
+    }
+    if (prop == "angle") {
+	// Single z-rotation: preserve x/y, override z.
+	const UserSettingUniquePtr& s = img ? img->angles : obj->groupAngles;
+	if (count < 1 || !s || !s->value) return false;
+	glm::vec3 a = s->value->getVec3 ();
+	a.z = vals[0];
+	s->value->update (a);
+	return true;
+    }
+    if (prop == "alpha") {
+	if (img) return setFloat (img->alpha);
+	if (txt) return setFloat (txt->alpha);
+	return false;
+    }
+    if (prop == "visible") {
+	if (img) return setBool (img->visible);
+	if (txt) return setBool (txt->visible);
+	return setBool (obj->groupVisible);
+    }
+    return false;
+}
+
 void CScene::renderFrame (const glm::ivec4& viewport) {
     // Remember the output viewport size. The scene renders into a scene-resolution
     // FBO (e.g. 3840x2160) that is then scaled to the real output (e.g. 1920x1080);
@@ -515,12 +604,23 @@ void CScene::renderFrame (const glm::ivec4& viewport) {
 
     glClear (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    for (const auto& cur : this->m_objectsByRenderOrder) {
+    // Snapshot the debug filter/skip list once per frame under the lock, so the IPC
+    // thread (inspector isolate/hide commands) can mutate them without racing the
+    // per-object reads below.
+    std::optional<int> objectFilter;
+    std::vector<int> skipObjects;
+    {
+	std::lock_guard<std::mutex> lk (this->m_debugMutex);
 	const auto& debug = this->getContext ().getApp ().getContext ().settings.render.debug;
-	if (debug.objectFilter.has_value () && cur->getId () != debug.objectFilter.value ()) {
+	objectFilter = debug.objectFilter;
+	skipObjects = debug.skipObjects;
+    }
+
+    for (const auto& cur : this->m_objectsByRenderOrder) {
+	if (objectFilter.has_value () && cur->getId () != objectFilter.value ()) {
 	    continue;
 	}
-	if (std::ranges::find (debug.skipObjects, cur->getId ()) != debug.skipObjects.end ()) {
+	if (std::ranges::find (skipObjects, cur->getId ()) != skipObjects.end ()) {
 	    continue;
 	}
 

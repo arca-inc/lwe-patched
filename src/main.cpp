@@ -3,6 +3,7 @@
 #include <cstring>
 #include <iostream>
 #include <mutex>
+#include <set>
 #include <string>
 #include <thread>
 #include <vector>
@@ -86,9 +87,59 @@ static void ipc_thread_func (int srv_fd) {
             if (a) a->signal (SIGTERM);
         } else if (!cmd.empty () && cmd[0] == '{') {
             // JSON protocol: {"cmd":"load","bg":"...","preset_dir":"...","props":{...}}
+            // plus the debug-inspector commands (isolate/hide/show/reset/set), which
+            // apply live to the running app without a reload.
             try {
                 auto j = nlohmann::json::parse (cmd);
-                if (j.value ("cmd", "") == "load") {
+                const std::string c = j.value ("cmd", "");
+
+                // Debug-inspector live commands: handled synchronously here (no reload).
+                static const std::set<std::string> debugCmds = {
+                    "isolate", "hide", "show", "reset", "set"
+                };
+                if (debugCmds.count (c)) {
+                    nlohmann::json ack;
+                    ack["ok"] = true;
+                    if (a == nullptr) {
+                        ack["ok"] = false;
+                        ack["error"] = "no app";
+                    } else if (c == "isolate") {
+                        if (j.contains ("id") && j["id"].is_number_integer ())
+                            a->debugIsolate (j["id"].get<int> ());
+                        else
+                            a->debugIsolate (std::nullopt);
+                    } else if (c == "hide" || c == "show") {
+                        if (j.contains ("id") && j["id"].is_number_integer ())
+                            a->debugSetHidden (j["id"].get<int> (), c == "hide");
+                        else { ack["ok"] = false; ack["error"] = "missing id"; }
+                    } else if (c == "reset") {
+                        a->debugClear ();
+                    } else if (c == "set") {
+                        const std::string prop = j.value ("prop", "");
+                        const int id = j.value ("id", -1);
+                        float vals[3] = {0, 0, 0};
+                        int count = 0;
+                        if (j.contains ("value")) {
+                            const auto& v = j["value"];
+                            if (v.is_array ()) {
+                                for (auto& e : v) {
+                                    if (count < 3 && e.is_number ()) vals[count++] = e.get<float> ();
+                                }
+                            } else if (v.is_number ()) {
+                                vals[0] = v.get<float> (); count = 1;
+                            } else if (v.is_boolean ()) {
+                                vals[0] = v.get<bool> () ? 1.0f : 0.0f; count = 1;
+                            }
+                        }
+                        if (!a->debugEditObject (id, prop, vals, count)) {
+                            ack["ok"] = false;
+                            ack["error"] = "unknown id/prop or no value";
+                        }
+                    }
+                    const std::string reply = ack.dump ();
+                    [[maybe_unused]] ssize_t wr = write (conn, reply.data (), reply.size ());
+                    close (conn);
+                } else if (c == "load") {
                     IpcLoad load;
                     load.bg        = j.value ("bg", "");
                     load.presetDir = j.value ("preset_dir", "");

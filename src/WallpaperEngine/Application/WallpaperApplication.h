@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <optional>
 #include <random>
 
 #include "WallpaperEngine/Application/ApplicationContext.h"
@@ -20,6 +21,10 @@
 #include "WallpaperEngine/Data/Model/Types.h"
 
 #include <set>
+
+namespace WallpaperEngine::Render::Wallpapers {
+class CScene;
+}
 
 namespace WallpaperEngine::Application {
 
@@ -76,6 +81,15 @@ public:
      */
     [[nodiscard]] std::string inspectScene () const;
     /**
+     * Debug inspector live controls — forwarded to the active scene wallpaper.
+     * No-ops when no scene is loaded. Called from the IPC thread; the scene guards
+     * the shared debug settings against the render loop.
+     */
+    void debugIsolate (std::optional<int> id) const;
+    void debugSetHidden (int id, bool hidden) const;
+    void debugClear () const;
+    bool debugEditObject (int id, const std::string& prop, const float* vals, int count) const;
+    /**
      * Sets the destination framebuffer for rendering. If not called, the default framebuffer will be used.
      */
     void setDestinationFramebuffer (GLuint framebuffer);
@@ -92,6 +106,8 @@ private:
      * @param bg
      */
     AssetLocatorUniquePtr setupAssetLocator (const std::string& bg) const;
+    /** Returns the first loaded scene wallpaper (nullptr if none); used by the debug inspector. */
+    [[nodiscard]] const Render::Wallpapers::CScene* activeScene () const;
     /**
      * Loads projects based off the settings
      */

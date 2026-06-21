@@ -184,10 +184,12 @@ void CTexture::setupOpenGLParameters (const uint32_t textureID) const {
 
     if (this->m_header->flags & TextureFlags_NoInterpolation) {
 	glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
+	glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
+			 this->m_header->images[textureID].size () > 1 ? GL_NEAREST_MIPMAP_NEAREST : GL_NEAREST);
     } else {
 	glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+	glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
+			 this->m_header->images[textureID].size () > 1 ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR);
     }
 
     glTexParameterf (GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY, 8.0f);

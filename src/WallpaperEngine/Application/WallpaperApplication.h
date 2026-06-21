@@ -71,6 +71,11 @@ public:
      */
     [[nodiscard]] const WallpaperEngine::Render::Drivers::Output::Output& getOutput () const;
     /**
+     * Serializes the active scene's object graph to JSON for the debug inspector.
+     * Returns "{}" when no scene wallpaper is loaded (e.g. web/video). Read-only.
+     */
+    [[nodiscard]] std::string inspectScene () const;
+    /**
      * Sets the destination framebuffer for rendering. If not called, the default framebuffer will be used.
      */
     void setDestinationFramebuffer (GLuint framebuffer);

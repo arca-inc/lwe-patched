@@ -8,6 +8,7 @@
 #include "WallpaperEngine/Logging/Log.h"
 #include "WallpaperEngine/Render/Drivers/VideoFactories.h"
 #include "WallpaperEngine/Render/RenderContext.h"
+#include "WallpaperEngine/Render/Wallpapers/CScene.h"
 
 #include "WallpaperEngine/Data/Dumpers/StringPrinter.h"
 #include "WallpaperEngine/Data/Parsers/ProjectParser.h"
@@ -1004,6 +1005,18 @@ ApplicationContext& WallpaperApplication::getContext () const { return this->m_c
 
 const WallpaperEngine::Render::Drivers::Output::Output& WallpaperApplication::getOutput () const {
     return this->m_renderContext->getOutput ();
+}
+
+std::string WallpaperApplication::inspectScene () const {
+    if (!this->m_renderContext) {
+	return "{}";
+    }
+    for (const auto& [screen, wallpaper] : this->m_renderContext->getWallpapers ()) {
+	if (wallpaper && wallpaper->is<Render::Wallpapers::CScene> ()) {
+	    return wallpaper->as<Render::Wallpapers::CScene> ()->toInspectorJSON ();
+	}
+    }
+    return "{}";
 }
 
 void WallpaperApplication::setDestinationFramebuffer (GLuint framebuffer) {

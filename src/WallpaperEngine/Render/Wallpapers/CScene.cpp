@@ -386,6 +386,80 @@ Camera& CScene::getCamera () const { return *this->m_camera; }
 
 glm::ivec2 CScene::getOutputSize () const { return this->m_outputSize; }
 
+std::string CScene::toInspectorJSON () const {
+    const auto vec3 = [] (const UserSettingUniquePtr& s) -> JSON {
+	if (s && s->value) {
+	    const glm::vec3 v = s->value->getVec3 ();
+	    return JSON::array ({v.x, v.y, v.z});
+	}
+	return JSON::array ({0.0f, 0.0f, 0.0f});
+    };
+    const auto boolOf = [] (const UserSettingUniquePtr& s, const bool def) -> bool {
+	return (s && s->value) ? s->value->getBool () : def;
+    };
+    const auto floatOf = [] (const UserSettingUniquePtr& s, const float def) -> float {
+	return (s && s->value) ? s->value->getFloat () : def;
+    };
+
+    JSON objects = JSON::array ();
+    for (const auto& objPtr : this->getScene ().objects) {
+	const Object& obj = *objPtr;
+	JSON jo;
+	jo["id"] = obj.id;
+	jo["name"] = obj.name;
+	if (obj.parent.has_value ()) {
+	    jo["parent"] = obj.parent.value ();
+	} else {
+	    jo["parent"] = nullptr;
+	}
+	jo["origin"] = vec3 (obj.origin);
+
+	if (obj.is<Image> ()) {
+	    const auto* img = obj.as<Image> ();
+	    const bool compose = img->model != nullptr && img->model->filename.find ("composelayer") != std::string::npos;
+	    jo["type"] = compose ? "compose" : "image";
+	    jo["scale"] = vec3 (img->scale);
+	    jo["angle"] = (img->angles && img->angles->value) ? img->angles->value->getVec3 ().z : 0.0f;
+	    jo["visible"] = boolOf (img->visible, true);
+	    jo["alpha"] = floatOf (img->alpha, 1.0f);
+	    jo["size"] = JSON::array ({img->size.x, img->size.y});
+	    jo["model"] = img->model != nullptr ? img->model->filename : "";
+	    JSON effects = JSON::array ();
+	    for (const auto& e : img->effects) {
+		if (e != nullptr) {
+		    effects.push_back (e->name.empty () ? std::string ("(effect)") : e->name);
+		}
+	    }
+	    jo["effects"] = effects;
+	} else if (obj.is<Text> ()) {
+	    const auto* txt = obj.as<Text> ();
+	    jo["type"] = "text";
+	    jo["scale"] = vec3 (txt->scale);
+	    jo["visible"] = boolOf (txt->visible, true);
+	    jo["alpha"] = floatOf (txt->alpha, 1.0f);
+	    jo["size"] = JSON::array ({txt->size.x, txt->size.y});
+	    jo["text"] = txt->text;
+	    jo["scripted"] = !txt->script.empty ();
+	} else if (obj.is<Sound> ()) {
+	    jo["type"] = "sound";
+	} else if (obj.is<Particle> ()) {
+	    jo["type"] = "particle";
+	    jo["scale"] = vec3 (obj.groupScale);
+	    jo["visible"] = boolOf (obj.groupVisible, true);
+	} else {
+	    jo["type"] = "object";
+	    jo["scale"] = vec3 (obj.groupScale);
+	    jo["visible"] = boolOf (obj.groupVisible, true);
+	}
+	objects.push_back (std::move (jo));
+    }
+
+    JSON root;
+    root["scene"] = { { "width", this->getWidth () }, { "height", this->getHeight () } };
+    root["objects"] = std::move (objects);
+    return root.dump ();
+}
+
 void CScene::renderFrame (const glm::ivec4& viewport) {
     // Remember the output viewport size. The scene renders into a scene-resolution
     // FBO (e.g. 3840x2160) that is then scaled to the real output (e.g. 1920x1080);

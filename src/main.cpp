@@ -71,6 +71,12 @@ static void ipc_thread_func (int srv_fd) {
             [[maybe_unused]] ssize_t wr = write (conn, "OK\n", 3);
             close (conn);
             if (a) a->signal (SIGTERM);
+        } else if (cmd == "inspect") {
+            // Scene debug inspector: return the live object graph as JSON. Read-only,
+            // so it's safe to serialize from this thread without pausing rendering.
+            std::string json = a ? a->inspectScene () : std::string ("{}");
+            [[maybe_unused]] ssize_t wr = write (conn, json.data (), json.size ());
+            close (conn);
         } else if (cmd.rfind ("load:", 0) == 0) {
             // Legacy plain-text protocol
             std::lock_guard<std::mutex> lk (g_ipc_mu);

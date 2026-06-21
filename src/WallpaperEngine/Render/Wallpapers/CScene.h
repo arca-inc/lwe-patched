@@ -28,6 +28,11 @@ public:
     // gets scaled to this). Used by CText to size glyphs in output pixels.
     [[nodiscard]] glm::ivec2 getOutputSize () const;
 
+    // Serializes the scene's object graph to JSON for the debug inspector: id, name, type,
+    // parent, the live transform/visibility values and effect names. Read-only; safe to
+    // call from the IPC thread (it only reads data-model values the render thread updates).
+    [[nodiscard]] std::string toInspectorJSON () const;
+
     [[nodiscard]] const Scene& getScene () const;
 
     [[nodiscard]] int getWidth () const override;

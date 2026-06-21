@@ -803,15 +803,19 @@ void CImage::setupPasses () {
 	writesToTarget = this->configurePassTarget (pass, drawTo, asInput, effectInput, inTargetEffectSequence);
 	// determine if it's the last element in the list as this is a screen-copy-like process
 	// TODO: PROPERLY CHECK IF THIS IS ALL THAT'S NEEDED
+	bool drawsToScene = false;
 	if (!writesToTarget && this->shouldRenderFinalPass (std::next (cur) == end)) {
 	    // TODO: PROPERLY CHECK EFFECT'S VISIBILITY AND TAKE IT INTO ACCOUNT
 	    spacePosition = this->getSceneSpacePosition ();
 	    drawTo = this->getScene ().getFBO ();
 	    projection = &this->m_modelViewProjectionScreen;
 	    inverseProjection = &this->m_modelViewProjectionScreenInverse;
+	    // Resolve the scene target live at render time (compose-layer aware).
+	    drawsToScene = true;
 	}
 
 	pass->setDestination (drawTo);
+	pass->setDrawsToScene (drawsToScene);
 	pass->setInput (asInput);
 	pass->setPreviousInput (inTargetEffectSequence ? effectInput : nullptr);
 	pass->setPosition (spacePosition);

@@ -50,3 +50,26 @@ void Camera::setOrthogonalProjection (const float width, const float height) {
     this->m_projection = glm::translate (this->m_projection, this->getEye ());
     this->m_isOrthogonal = true;
 }
+
+void Camera::pushLocalProjection (const float width, const float height) {
+    this->m_projectionStack.push_back ({this->m_width, this->m_height, this->m_projection});
+
+    const float nearz = this->m_camera.projection.nearz;
+    const float farz = this->m_camera.projection.farz;
+    // Plain centred ortho in the buffer's own pixel space — no eye/parallax offset, the
+    // compose layer's children are positioned relative to the buffer centre.
+    this->m_width = width;
+    this->m_height = height;
+    this->m_projection = glm::ortho<float> (-width / 2.0, width / 2.0, -height / 2.0, height / 2.0, nearz, farz);
+}
+
+void Camera::popLocalProjection () {
+    if (this->m_projectionStack.empty ()) {
+	return;
+    }
+    const auto& saved = this->m_projectionStack.back ();
+    this->m_width = saved.width;
+    this->m_height = saved.height;
+    this->m_projection = saved.projection;
+    this->m_projectionStack.pop_back ();
+}

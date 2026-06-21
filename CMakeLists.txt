@@ -433,6 +433,8 @@ set(COMMON_SOURCES
     src/WallpaperEngine/Render/Objects/CParticle.cpp
     src/WallpaperEngine/Render/Objects/CText.h
     src/WallpaperEngine/Render/Objects/CText.cpp
+    src/WallpaperEngine/Render/Objects/CComposeLayer.h
+    src/WallpaperEngine/Render/Objects/CComposeLayer.cpp
 
     src/WallpaperEngine/Render/CFBO.h
     src/WallpaperEngine/Render/CFBO.cpp

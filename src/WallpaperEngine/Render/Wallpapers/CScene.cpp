@@ -1,3 +1,4 @@
+#include "WallpaperEngine/Render/Objects/CComposeLayer.h"
 #include "WallpaperEngine/Render/Objects/CImage.h"
 #include "WallpaperEngine/Render/Objects/CParticle.h"
 #include "WallpaperEngine/Render/Objects/CSound.h"
@@ -34,6 +35,19 @@ Render::CObject* createImageObject (CScene& scene, const Image& imageData) {
 	return nullptr;
     }
     return image;
+}
+
+// A compose layer is an image whose model is WE's util/composelayer.json: it groups and
+// composites its children into a buffer instead of drawing anything itself.
+bool isComposeLayer (const Object& object) {
+    if (!object.is<Image> ()) {
+	return false;
+    }
+    const auto* image = object.as<Image> ();
+    if (image->model == nullptr) {
+	return false;
+    }
+    return image->model->filename.find ("composelayer") != std::string::npos;
 }
 
 Render::CObject* createParticleObject (CScene& scene, const Particle& particleData) {
@@ -129,6 +143,9 @@ CScene::CScene (
     for (const auto& object : scene->objects) {
 	this->addObjectToRenderOrder (*object);
     }
+
+    // Hand each compose layer its children and drop them from the flat render order.
+    this->buildComposeGroups ();
 
     this->collectScriptedValues ();
 
@@ -260,7 +277,9 @@ Render::CObject* CScene::createObject (const Object& object) {
 Render::CObject* CScene::dispatchObjectType (const Object& object) {
     Render::CObject* renderObject = nullptr;
 
-    if (object.is<Image> ()) {
+    if (isComposeLayer (object)) {
+	renderObject = new Objects::CComposeLayer (*this, object);
+    } else if (object.is<Image> ()) {
 	renderObject = createImageObject (*this, *object.as<Image> ());
     } else if (object.is<Sound> ()) {
 	renderObject = new Objects::CSound (*this, *object.as<Sound> ());
@@ -317,6 +336,44 @@ void CScene::addObjectToRenderOrder (const Object& object) {
     if (renderIt == this->m_objectsByRenderOrder.end ()) {
 	this->m_objectsByRenderOrder.emplace_back (obj->second);
     }
+}
+
+void CScene::buildComposeGroups () {
+    // Nearest ancestor that is a compose layer, walking the parent chain.
+    const auto nearestComposeAncestor = [this] (const Object& object) -> Objects::CComposeLayer* {
+	std::optional<int> parent = object.parent;
+	for (int guard = 0; parent.has_value () && guard < 64; ++guard) {
+	    const auto it = this->m_objects.find (parent.value ());
+	    if (it == this->m_objects.end ()) {
+		break;
+	    }
+	    if (it->second->is<Objects::CComposeLayer> ()) {
+		return it->second->as<Objects::CComposeLayer> ();
+	    }
+	    parent = it->second->getObject ().parent;
+	}
+	return nullptr;
+    };
+
+    std::map<int, std::vector<CObject*>> childrenByLayer;
+    std::vector<CObject*> topLevelOrder;
+    // Iterating the existing order preserves child render order within each layer.
+    for (auto* object : this->m_objectsByRenderOrder) {
+	if (auto* layer = nearestComposeAncestor (object->getObject ()); layer != nullptr) {
+	    childrenByLayer[layer->getId ()].push_back (object);
+	} else {
+	    topLevelOrder.push_back (object);
+	}
+    }
+
+    for (auto& [layerId, children] : childrenByLayer) {
+	const auto it = this->m_objects.find (layerId);
+	if (it != this->m_objects.end () && it->second->is<Objects::CComposeLayer> ()) {
+	    it->second->as<Objects::CComposeLayer> ()->setChildren (std::move (children));
+	}
+    }
+
+    this->m_objectsByRenderOrder = std::move (topLevelOrder);
 }
 
 void CScene::registerScriptedValue (const UserSettingUniquePtr& setting) {
@@ -582,8 +639,10 @@ void CScene::renderFrame (const glm::ivec4& viewport) {
 	    = glm::mix (this->m_parallaxDisplacement, (centeredMouse * amount) * influence, delay);
     }
 
-    // update main textures for images
-    for (const auto& cur : this->m_objectsByRenderOrder) {
+    // update main textures for images. Iterate every object (not just the flat render
+    // order) so images nested inside compose layers — which are rendered by their layer,
+    // not the main loop — still get their animated textures updated.
+    for (const auto& cur : this->m_objects | std::views::values) {
 	if (!cur->is<Objects::CImage> ()) {
 	    continue;
 	}

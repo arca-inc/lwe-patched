@@ -30,6 +30,14 @@ public:
     // Real output viewport size in pixels (the scene FBO is scene-resolution and
     // gets scaled to this). Used by CText to size glyphs in output pixels.
     [[nodiscard]] glm::ivec2 getOutputSize () const;
+    void setOutputSize (const glm::ivec2& size) { this->m_outputSize = size; }
+
+    // While a compose layer renders its children into its own buffer, this is the layer's
+    // object id. resolveTransform stops the parent walk here so children sit in the buffer's
+    // local space (the layer's own origin/scale is applied when the buffer is drawn, not
+    // baked into every child). -1 when not composing.
+    [[nodiscard]] int getComposeStopId () const { return this->m_composeStopId; }
+    void setComposeStopId (const int id) { this->m_composeStopId = id; }
 
     // Serializes the scene's object graph to JSON for the debug inspector: id, name, type,
     // parent, the live transform/visibility values and effect names. Read-only; safe to
@@ -80,6 +88,9 @@ private:
     Render::CObject* createObject (const Object& object);
     Render::CObject* dispatchObjectType (const Object& object);
     void addObjectToRenderOrder (const Object& object);
+    // Moves each compose layer's descendants out of the flat render order and into the
+    // owning layer, so the layer renders them into its own buffer (see CComposeLayer).
+    void buildComposeGroups ();
     void collectScriptedValues ();
     void registerScriptedValue (const UserSettingUniquePtr& setting);
     void updateScriptedValues ();
@@ -94,6 +105,7 @@ private:
     // Guards the debug objectFilter/skipObjects settings against the render loop,
     // which reads them every frame while the IPC thread mutates them.
     mutable std::mutex m_debugMutex;
+    int m_composeStopId = -1;
     ObjectUniquePtr m_bloomObjectData;
     CObject* m_bloomObject = nullptr;
     std::map<int, CObject*> m_objects = {};

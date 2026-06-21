@@ -1,6 +1,7 @@
 #include <csignal>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <iostream>
 #include <mutex>
 #include <set>
@@ -174,6 +175,7 @@ static void initLogging () {
 }
 
 int main (int argc, char* argv[]) {
+    tzset ();
     try {
         // Detect CEF subprocess invocation (--type=zygote / --type=utility).
         // When browser_subprocess_path is set to lwe-cef-subprocess this should

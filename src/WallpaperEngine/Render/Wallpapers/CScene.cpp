@@ -503,7 +503,13 @@ std::string CScene::toInspectorJSON () const {
 	    jo["visible"] = boolOf (txt->visible, true);
 	    jo["alpha"] = floatOf (txt->alpha, 1.0f);
 	    jo["size"] = JSON::array ({txt->size.x, txt->size.y});
-	    jo["text"] = txt->text;
+	    std::string currentText = txt->text;
+	    if (const auto* cobj = this->getObject (obj.id)) {
+		if (const auto* ctxt = dynamic_cast<const Objects::CText*> (cobj)) {
+		    currentText = ctxt->getLastRenderedText ();
+		}
+	    }
+	    jo["text"] = currentText;
 	    jo["scripted"] = !txt->script.empty ();
 	} else if (obj.is<Sound> ()) {
 	    jo["type"] = "sound";

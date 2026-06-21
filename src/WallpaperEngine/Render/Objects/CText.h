@@ -53,6 +53,7 @@ public:
 
     void setup ();
     void render () override;
+    [[nodiscard]] std::string getLastRenderedText () const { return m_lastRenderedText; }
 
 private:
     // Rebuilds the glyph texture (and matching quad VBO) from the given string.

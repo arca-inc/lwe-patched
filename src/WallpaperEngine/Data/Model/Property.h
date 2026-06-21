@@ -210,6 +210,8 @@ public:
 
     void update (const std::string& value) override { this->m_value = value; }
 
+    [[nodiscard]] std::string toString () const override { return this->m_value; }
+
     [[nodiscard]] std::string dump () const override {
 	std::stringstream ss;
 
@@ -232,6 +234,8 @@ public:
 
     void update (const std::string& value) override { this->m_value = value; }
 
+    [[nodiscard]] std::string toString () const override { return this->m_value; }
+
     [[nodiscard]] std::string dump () const override {
 	std::stringstream ss;
 
@@ -253,6 +257,8 @@ public:
     }
 
     void update (const std::string& value) override { this->m_value = value; }
+
+    [[nodiscard]] std::string toString () const override { return this->m_value; }
 
     [[nodiscard]] std::string dump () const override {
 	std::stringstream ss;

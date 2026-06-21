@@ -56,11 +56,15 @@ void Camera::pushLocalProjection (const float width, const float height) {
 
     const float nearz = this->m_camera.projection.nearz;
     const float farz = this->m_camera.projection.farz;
-    // Plain centred ortho in the buffer's own pixel space — no eye/parallax offset, the
-    // compose layer's children are positioned relative to the buffer centre.
+    // Compose children are positioned relative to the buffer centre, but CImage/CText still
+    // compute their gl position as `origin - size/2` (the scene's bottom-left→centred
+    // mapping). Feeding that through a plain centred ortho double-shifts them to the buffer
+    // edge — that was the real "children render transparent" symptom (content off-buffer,
+    // centre empty). ortho(-W,0, H,0) cancels the extra -W/2 / +H/2 shift exactly, so a
+    // child at local (0,0) lands at the buffer centre. (NDC = 2*local/size.)
     this->m_width = width;
     this->m_height = height;
-    this->m_projection = glm::ortho<float> (-width / 2.0, width / 2.0, -height / 2.0, height / 2.0, nearz, farz);
+    this->m_projection = glm::ortho<float> (-width, 0.0f, height, 0.0f, nearz, farz);
 }
 
 void Camera::popLocalProjection () {

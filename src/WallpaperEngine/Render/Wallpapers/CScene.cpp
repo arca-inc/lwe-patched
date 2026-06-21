@@ -419,6 +419,14 @@ std::string CScene::toInspectorJSON () const {
 	    const bool compose = img->model != nullptr && img->model->filename.find ("composelayer") != std::string::npos;
 	    jo["type"] = compose ? "compose" : "image";
 	    jo["scale"] = vec3 (img->scale);
+	    // Compose layers behave as groups: their real transform lives in groupScale/
+	    // groupAngles, not image->scale. Surface both so the inspector shows whether
+	    // the group scale (which resolveTransform currently ignores) is non-trivial.
+	    if (compose) {
+		jo["groupScale"] = vec3 (obj.groupScale);
+		jo["groupAngle"] = (obj.groupAngles && obj.groupAngles->value)
+		    ? obj.groupAngles->value->getVec3 ().z : 0.0f;
+	    }
 	    jo["angle"] = (img->angles && img->angles->value) ? img->angles->value->getVec3 ().z : 0.0f;
 	    jo["visible"] = boolOf (img->visible, true);
 	    jo["alpha"] = floatOf (img->alpha, 1.0f);

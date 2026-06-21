@@ -280,6 +280,15 @@ void CPass::bindTextureOverrides (
 	    } catch (std::runtime_error&) {
 		texture = expectedTexture;
 	    }
+	    // Keep g_TextureNResolution in sync with the cover actually bound this frame,
+	    // so the blend shader's UV transform (which divides by the texture resolution)
+	    // maps the album art to the quad instead of stretching/overflowing it.
+	    if (texture != nullptr) {
+		if (const auto res = this->m_dynamicTextureResolutions.find (index);
+		    res != this->m_dynamicTextureResolutions.end ()) {
+		    res->second = *texture->getResolution ();
+		}
+	    }
 	} else {
 	    texture = expectedTexture == nullptr ? (this->m_previousInput ?: this->m_input) : expectedTexture;
 	}
@@ -814,7 +823,15 @@ void CPass::setupTextureUniforms () {
 	namestream << "g_Texture" << textureIndex << "Resolution";
 
 	texture = this->resolveTexture (expectedTexture, textureIndex, texture);
-	this->addUniform (namestream.str (), texture->getResolution ());
+	// Dynamic slots (e.g. $mediaThumbnail) swap to a different-sized texture every
+	// frame; point their resolution uniform at a cache we refresh on bind so the
+	// shader's UV transform tracks the live cover instead of the setup placeholder.
+	if (this->m_dynamicTextures.contains (textureIndex)) {
+	    this->m_dynamicTextureResolutions[textureIndex] = *texture->getResolution ();
+	    this->addUniform (namestream.str (), &this->m_dynamicTextureResolutions[textureIndex]);
+	} else {
+	    this->addUniform (namestream.str (), texture->getResolution ());
+	}
     }
 
     this->addUniform ("g_Texture0Resolution", &this->m_texture0Resolution);

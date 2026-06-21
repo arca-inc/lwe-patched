@@ -201,6 +201,17 @@ private:
      */
     std::map<int, std::string> m_dynamicTextures = {};
 
+    /**
+     * Live resolution (g_TextureNResolution) for each dynamic texture slot. The
+     * resolution uniform is registered to point here so that when the per-frame
+     * cover swap binds a thumbnail of a different size, the shader's UV transform
+     * (which divides by the texture resolution) follows it instead of staying
+     * frozen to the setup-time placeholder. Node-stable addresses (std::map), so
+     * the registered uniform pointers stay valid. Mutable: refreshed from the
+     * const per-frame bind path.
+     */
+    mutable std::map<int, glm::vec4> m_dynamicTextureResolutions = {};
+
     Render::Shaders::Shader* m_shader = nullptr;
 
 	    std::shared_ptr<const CFBO> m_drawTo = nullptr;

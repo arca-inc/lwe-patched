@@ -111,6 +111,15 @@ public:
     [[nodiscard]] std::shared_ptr<const CFBO> getFBO () const;
 
     /**
+     * Temporarily redirects the "scene" render target to another FBO. Used by compose
+     * layers (CComposeLayer) to render their child objects into an offscreen buffer:
+     * children call getFBO()/getWallpaperFramebuffer() for their final draw target, so
+     * pointing those here makes them composite into the layer's buffer instead of the
+     * scene. Pass nullptr to restore the real scene FBO.
+     */
+    void setActiveRenderTarget (const std::shared_ptr<const CFBO>& fbo);
+
+    /**
      * Updates the UVs coordinates if window/screen/vflip/projection has changed
      */
     void updateUVs (const glm::ivec4& viewport, const bool vflip);
@@ -186,6 +195,9 @@ protected:
 
     /** The FBO used for scene output */
     std::shared_ptr<const CFBO> m_sceneFBO = nullptr;
+
+    /** When set, redirects getFBO()/getWallpaperFramebuffer() to this buffer (compose layers). */
+    std::shared_ptr<const CFBO> m_activeRenderTarget = nullptr;
 
     GLuint m_vaoBuffer = GL_NONE;
 

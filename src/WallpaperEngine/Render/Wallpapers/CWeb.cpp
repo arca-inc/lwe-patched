@@ -45,6 +45,28 @@ std::string jsEscape (const std::string& s) {
     return out;
 }
 
+// Format a property's current value as a JS literal for applyUserProperties, matching how
+// Wallpaper Engine types each value: booleans as booleans, sliders/ints as numbers, and
+// everything else (colors "r g b", combos, text) as a double-quoted string. Vectors print
+// space-separated like WE (DynamicValue uses ", "). Shared by the load-time seeding in the
+// constructor and the live applyLiveProperty path so both stay byte-for-byte consistent.
+std::string formatPropertyLiteral (const WallpaperEngine::Data::Model::Property& prop, std::string raw) {
+    using Model = WallpaperEngine::Data::Model::DynamicValue;
+    for (std::size_t pos = raw.find (", "); pos != std::string::npos; pos = raw.find (", ", pos)) {
+        raw.replace (pos, 2, " ");
+        pos += 1;
+    }
+    switch (prop.getType ()) {
+        case Model::Boolean:
+            return (raw == "1" || raw == "true" || raw == "True") ? "true" : "false";
+        case Model::Float:
+        case Model::Int:
+            return raw.empty () ? "0" : raw;
+        default:
+            return "\"" + jsEscape (raw) + "\"";
+    }
+}
+
 // Run `window.__lweMedia.<method>(<jsonObject>)` in the page, guarding against the
 // document-start bootstrap not being present yet (it could race a navigation).
 void emitMedia (const CefRefPtr<CefFrame>& frame, const char* method, const std::string& jsonObject) {
@@ -86,46 +108,15 @@ CWeb::CWeb (
     //      string "0" reads truthy and wrongly enables debug overlays / disables backgrounds. So the
     //      values are pre-formatted here into JS literals (BrowserClient emits them verbatim).
     // Command-line overrides win over defaults.
-    using Model = WallpaperEngine::Data::Model::DynamicValue;
     const auto& overrides = context.getApp ().getContext ().settings.general.properties;
-    const auto jsEscape = [] (const std::string& in) {
-	std::string out;
-	out.reserve (in.size () + 2);
-	for (const char c : in) {
-	    switch (c) {
-		case '\\': out += "\\\\"; break;
-		case '"': out += "\\\""; break;
-		case '\n': out += "\\n"; break;
-		case '\r': out += "\\r"; break;
-		default: out += c;
-	    }
-	}
-	return out;
-    };
     std::map<std::string, std::string> webProperties;
     for (const auto& [name, prop] : this->getWeb ().project.properties) {
 	if (prop == nullptr) {
 	    continue;
 	}
 	const auto it = overrides.find (name);
-	std::string raw = it != overrides.end () ? it->second : prop->toString ();
-	// DynamicValue prints vectors comma-separated ("0, 0, 0"); WE uses spaces ("0 0 0").
-	for (std::size_t pos = raw.find (", "); pos != std::string::npos; pos = raw.find (", ", pos)) {
-	    raw.replace (pos, 2, " ");
-	    pos += 1;
-	}
-	switch (prop->getType ()) {
-	    case Model::Boolean:
-		webProperties[name] = (raw == "1" || raw == "true" || raw == "True") ? "true" : "false";
-		break;
-	    case Model::Float:
-	    case Model::Int:
-		webProperties[name] = raw.empty () ? "0" : raw;
-		break;
-	    default:
-		webProperties[name] = "\"" + jsEscape (raw) + "\"";
-		break;
-	}
+	const std::string raw = it != overrides.end () ? it->second : prop->toString ();
+	webProperties[name] = formatPropertyLiteral (*prop, raw);
     }
     // Any command-line override without a declared property (unusual) is forwarded as a string.
     for (const auto& [key, value] : overrides) {
@@ -219,7 +210,52 @@ void CWeb::tickInput (const glm::ivec4& viewport) {
         this->updateMouse (viewport);
         this->pumpMedia ();
         this->pumpAudio ();
+        this->flushPendingProperties ();
     }
+}
+
+void CWeb::applyLiveProperty (const std::string& name) {
+    // IPC thread: just queue the name; the value is read and pushed on the render thread.
+    std::lock_guard<std::mutex> lk (this->m_pendingPropMutex);
+    this->m_pendingProperties.push_back (name);
+}
+
+void CWeb::flushPendingProperties () {
+    std::vector<std::string> pending;
+    {
+        std::lock_guard<std::mutex> lk (this->m_pendingPropMutex);
+        if (this->m_pendingProperties.empty ()) {
+            return;
+        }
+        pending.swap (this->m_pendingProperties);
+    }
+
+    CefRefPtr<CefFrame> frame = this->m_browser->GetMainFrame ();
+    if (!frame) {
+        return;
+    }
+
+    // Build a single applyUserProperties call carrying every queued property at its current
+    // value, mirroring how WE pushes runtime property changes to the page.
+    std::string body;
+    for (const std::string& name : pending) {
+        const auto it = this->getWeb ().project.properties.find (name);
+        if (it == this->getWeb ().project.properties.end () || it->second == nullptr) {
+            continue;
+        }
+        if (!body.empty ()) {
+            body += ',';
+        }
+        body += "\"" + jsEscape (name) + "\":{\"value\":" + formatPropertyLiteral (*it->second, it->second->toString ()) + "}";
+    }
+    if (body.empty ()) {
+        return;
+    }
+
+    const std::string js
+        = "window.wallpaperPropertyListener&&window.wallpaperPropertyListener.applyUserProperties&&"
+          "window.wallpaperPropertyListener.applyUserProperties({" + body + "});";
+    frame->ExecuteJavaScript (js, frame->GetURL (), 0);
 }
 
 void CWeb::pumpAudio () {

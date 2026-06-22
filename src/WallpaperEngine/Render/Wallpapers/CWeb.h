@@ -8,6 +8,7 @@
 #include <chrono>
 #include <future>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <utility>
@@ -40,6 +41,14 @@ public:
 
     void setSize (int width, int height);
 
+    /**
+     * Live-applies a user property to the running page (no reload). Called from the IPC
+     * thread: it only enqueues the property name; the actual wallpaperPropertyListener.
+     * applyUserProperties JS is built and executed on the render thread (see
+     * flushPendingProperties), reading the freshly-updated value from project.properties.
+     */
+    void applyLiveProperty (const std::string& name);
+
 protected:
     void tickInput (const glm::ivec4& viewport) override;
     void renderFrame (const glm::ivec4& viewport) override;
@@ -51,6 +60,10 @@ protected:
     // Push the live audio FFT spectrum into the page's wallpaperRegisterAudioListener
     // callback (window.__lweMedia.audio), throttled to ~30 Hz.
     void pumpAudio ();
+    // Drain m_pendingProperties (filled by applyLiveProperty from the IPC thread) and push
+    // each property to the page via wallpaperPropertyListener.applyUserProperties. Runs on
+    // the render thread so all CEF/browser access stays single-threaded.
+    void flushPendingProperties ();
 
     friend class CWallpaper;
 
@@ -85,5 +98,9 @@ private:
 
     glm::vec2 m_mousePosition = {};
     glm::vec2 m_mousePositionLast = {};
+
+    // Live property pushes queued from the IPC thread, drained on the render thread.
+    std::mutex m_pendingPropMutex;
+    std::vector<std::string> m_pendingProperties;
 };
 }

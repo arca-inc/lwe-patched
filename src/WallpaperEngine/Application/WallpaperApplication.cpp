@@ -9,6 +9,7 @@
 #include "WallpaperEngine/Render/Drivers/VideoFactories.h"
 #include "WallpaperEngine/Render/RenderContext.h"
 #include "WallpaperEngine/Render/Wallpapers/CScene.h"
+#include "WallpaperEngine/Render/Wallpapers/CWeb.h"
 
 #include "WallpaperEngine/Data/Dumpers/StringPrinter.h"
 #include "WallpaperEngine/Data/Parsers/ProjectParser.h"
@@ -1049,14 +1050,30 @@ void WallpaperApplication::debugHighlight (int id) const {
 
 bool WallpaperApplication::setProperty (const std::string& name, const std::string& value) const {
     // Live-update a user property (the same map --set-property overrides at startup, see
-    // setupPropertiesForProject). Properties are DynamicValues read by bound material
-    // constants / scripted object values, so this takes effect without reloading the scene.
+    // setupPropertiesForProject) without reloading. Two delivery paths, because the two
+    // wallpaper kinds consume properties differently:
+    //   - scene wallpapers: the Property is a DynamicValue read by bound material constants /
+    //     scripted object values, so updating it here propagates to any value connected to it.
+    //   - web wallpapers: the page reads properties through wallpaperPropertyListener, so after
+    //     updating the Property we push it to the running page via CWeb::applyLiveProperty.
     bool any = false;
     for (const auto& [background, info] : this->m_backgrounds) {
 	const auto it = info->properties.find (name);
 	if (it != info->properties.end () && it->second != nullptr) {
 	    it->second->update (value);
 	    any = true;
+	}
+    }
+    if (!any) {
+	return false;
+    }
+    // Push to any live web wallpaper (the update above already refreshed the Property value
+    // its applyLiveProperty reads).
+    if (this->m_renderContext) {
+	for (const auto& [screen, wallpaper] : this->m_renderContext->getWallpapers ()) {
+	    if (wallpaper && wallpaper->is<Render::Wallpapers::CWeb> ()) {
+		wallpaper->as<Render::Wallpapers::CWeb> ()->applyLiveProperty (name);
+	    }
 	}
     }
     return any;

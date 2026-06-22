@@ -144,9 +144,6 @@ CScene::CScene (
 	this->addObjectToRenderOrder (*object);
     }
 
-    // Hand each compose layer its children and drop them from the flat render order.
-    this->buildComposeGroups ();
-
     this->collectScriptedValues ();
 
     // create extra framebuffers for the bloom effect
@@ -336,44 +333,6 @@ void CScene::addObjectToRenderOrder (const Object& object) {
     if (renderIt == this->m_objectsByRenderOrder.end ()) {
 	this->m_objectsByRenderOrder.emplace_back (obj->second);
     }
-}
-
-void CScene::buildComposeGroups () {
-    // Nearest ancestor that is a compose layer, walking the parent chain.
-    const auto nearestComposeAncestor = [this] (const Object& object) -> Objects::CComposeLayer* {
-	std::optional<int> parent = object.parent;
-	for (int guard = 0; parent.has_value () && guard < 64; ++guard) {
-	    const auto it = this->m_objects.find (parent.value ());
-	    if (it == this->m_objects.end ()) {
-		break;
-	    }
-	    if (it->second->is<Objects::CComposeLayer> ()) {
-		return it->second->as<Objects::CComposeLayer> ();
-	    }
-	    parent = it->second->getObject ().parent;
-	}
-	return nullptr;
-    };
-
-    std::map<int, std::vector<CObject*>> childrenByLayer;
-    std::vector<CObject*> topLevelOrder;
-    // Iterating the existing order preserves child render order within each layer.
-    for (auto* object : this->m_objectsByRenderOrder) {
-	if (auto* layer = nearestComposeAncestor (object->getObject ()); layer != nullptr) {
-	    childrenByLayer[layer->getId ()].push_back (object);
-	} else {
-	    topLevelOrder.push_back (object);
-	}
-    }
-
-    for (auto& [layerId, children] : childrenByLayer) {
-	const auto it = this->m_objects.find (layerId);
-	if (it != this->m_objects.end () && it->second->is<Objects::CComposeLayer> ()) {
-	    it->second->as<Objects::CComposeLayer> ()->setChildren (std::move (children));
-	}
-    }
-
-    this->m_objectsByRenderOrder = std::move (topLevelOrder);
 }
 
 void CScene::registerScriptedValue (const UserSettingUniquePtr& setting) {
@@ -590,17 +549,26 @@ bool CScene::debugEditObject (int id, const std::string& prop, const float* vals
 	return true;
     };
 
+    // A compose layer is an Image by type but its transform lives in the group fields
+    // (groupScale/groupAngles), which is what its children inherit through resolveTransform.
+    // Route scale/angle edits there so the inspector can tune the chalkboard group live.
+    const bool compose = isComposeLayer (*obj);
+
     if (prop == "origin") {
 	return setVec3 (obj->origin);
     }
+    if (prop == "groupScale") {
+	return setVec3 (obj->groupScale);
+    }
     if (prop == "scale") {
+	if (compose) return setVec3 (obj->groupScale);
 	if (img) return setVec3 (img->scale);
 	if (txt) return setVec3 (txt->scale);
 	return setVec3 (obj->groupScale);
     }
-    if (prop == "angle") {
+    if (prop == "angle" || prop == "groupAngle") {
 	// Single z-rotation: preserve x/y, override z.
-	const UserSettingUniquePtr& s = img ? img->angles : obj->groupAngles;
+	const UserSettingUniquePtr& s = (img && !compose) ? img->angles : obj->groupAngles;
 	if (count < 1 || !s || !s->value) return false;
 	glm::vec3 a = s->value->getVec3 ();
 	a.z = vals[0];

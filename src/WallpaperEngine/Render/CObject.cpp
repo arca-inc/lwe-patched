@@ -37,13 +37,6 @@ const Object& CObject::getObject () const { return this->m_object; }
 CObject::ResolvedTransform CObject::resolveTransform (const Object& object, const int depth) const {
     constexpr int kMaxParentDepth = 32;
 
-    // Inside a compose layer's child render, stop the parent walk at the layer: its own
-    // origin/scale/angle is applied when the composited buffer is drawn, so from a child's
-    // point of view the layer is the identity origin of the buffer's local space.
-    if (object.id == this->getScene ().getComposeStopId ()) {
-	return { glm::vec3 (0.0f), glm::vec3 (1.0f), 0.0f };
-    }
-
     glm::vec3 origin = object.origin->value->getVec3 ();
     glm::vec3 scale = glm::vec3 (1.0f);
     float angle = 0.0f;

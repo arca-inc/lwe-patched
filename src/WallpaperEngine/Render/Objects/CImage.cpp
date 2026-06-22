@@ -905,14 +905,6 @@ void CImage::render () {
 	return;
     }
 
-    // Passthrough children inside a compose buffer sample the shared, scene-sized
-    // _rt_FullFrameBuffer, which holds the real scene (not this 1000x1000 buffer) — so
-    // they paint scene streaks over the layer's content. Skip them while composing; the
-    // board's actual content (polaroid, text, solids) are non-passthrough and render fine.
-    if (this->getImage ().model->passthrough && this->getScene ().getComposeStopId () != -1) {
-	return;
-    }
-
     if (this->m_passthroughFBO != nullptr) {
 	auto sceneFBO = this->getScene().getFBO();
 	GLint w = static_cast<GLint>(sceneFBO->getRealWidth());
@@ -942,14 +934,8 @@ void CImage::render () {
 
     auto cur = this->m_passes.begin ();
 
-    // The final pass normally leaves alpha unwritten: the scene framebuffer is opaque, so
-    // image alpha is irrelevant there. But when this image is a child being composited into
-    // a compose layer's buffer (cleared to alpha 0), we MUST write alpha — otherwise the
-    // buffer stays fully transparent and the whole compose layer renders invisible.
-    const bool composing = this->getScene ().getComposeStopId () != -1;
-
     for (const auto end = this->m_passes.end (); cur != end; ++cur) {
-	if (std::next (cur) == end && !composing) {
+	if (std::next (cur) == end) {
 	    glColorMask (true, true, true, false);
 	}
 

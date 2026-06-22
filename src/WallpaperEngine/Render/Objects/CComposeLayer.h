@@ -1,10 +1,5 @@
 #pragma once
 
-#include <GL/glew.h>
-#include <glm/vec2.hpp>
-#include <vector>
-
-#include "WallpaperEngine/Render/CFBO.h"
 #include "WallpaperEngine/Render/CObject.h"
 
 namespace WallpaperEngine::Render::Wallpapers {
@@ -15,44 +10,22 @@ namespace WallpaperEngine::Render::Objects {
 /**
  * Wallpaper Engine "compose layer" (model models/util/composelayer.json).
  *
- * In WE a compose layer renders its child objects into an off-screen buffer at the
- * layer's native size, then draws that buffer using the layer's own transform. The
- * children are laid out in the buffer's local space, so the layer's (often non-uniform)
- * scale stretches the *composite* as a whole instead of every child individually.
+ * In WE a compose layer is a *passthrough* effect: it re-samples the scene framebuffer
+ * (_rt_FullFrameBuffer) through a projective transform — that is how the cafe's floor/glass
+ * reflections are produced (see assets/shaders/composelayer.{vert,frag}). It does NOT own or
+ * composite its children: the children render normally into the scene and inherit the
+ * layer's groupScale/groupAngle through the parent chain (CObject::resolveTransform handles
+ * the compose-layer case generically, for any wallpaper).
  *
- * LWE previously had no compose support: it flattened children into the scene and let
- * each one inherit the layer's scale multiplicatively, which distorted nested groups
- * (e.g. the cafe chalkboard polaroid came out stretched into a wide smear). This object
- * restores the correct behaviour: it owns an FBO, renders its assigned children into it
- * with a local projection (see Camera::pushLocalProjection + CScene::setComposeStopId),
- * then draws the FBO as a single textured quad with the layer's resolved transform.
+ * LWE has no projective-passthrough implementation, so it drew that framebuffer re-sample as
+ * vertical streaks (the visible "reflection bug"). We therefore render the compose layer as a
+ * no-op: the streaks disappear and the children keep rendering correctly. This is generic —
+ * it keys only off the composelayer.json model, never off a specific wallpaper/object id.
  */
 class CComposeLayer final : public CObject {
 public:
     CComposeLayer (Wallpapers::CScene& scene, const Object& object);
-    ~CComposeLayer () override;
-
-    // Children assigned to this layer (those whose nearest compose ancestor is this
-    // layer), in scene render order. Populated by CScene after all objects are created.
-    void setChildren (std::vector<CObject*> children);
 
     void render () override;
-
-private:
-    void ensureGL ();
-    void renderChildrenToBuffer ();
-    void drawBuffer ();
-
-    std::vector<CObject*> m_children = {};
-    std::shared_ptr<CFBO> m_fbo = nullptr;
-    glm::vec2 m_nativeSize = {0.0f, 0.0f};
-
-    GLuint m_program = 0;
-    GLuint m_vao = 0;
-    GLuint m_vbo = 0;
-    GLint m_uMVP = -1;
-    GLint m_uTexture = -1;
-    GLint m_uAlpha = -1;
-    bool m_glReady = false;
 };
 } // namespace WallpaperEngine::Render::Objects

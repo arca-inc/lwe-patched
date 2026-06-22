@@ -61,14 +61,12 @@ const AssetLocator& CWallpaper::getAssetLocator () const { return *this->m_wallp
 const Wallpaper& CWallpaper::getWallpaperData () const { return this->m_wallpaperData; }
 
 GLuint CWallpaper::getWallpaperFramebuffer () const {
-    return (this->m_activeRenderTarget ? this->m_activeRenderTarget : this->m_sceneFBO)->getFramebuffer ();
+    return this->m_sceneFBO->getFramebuffer ();
 }
 
 GLuint CWallpaper::getWallpaperTexture () const {
-    return (this->m_activeRenderTarget ? this->m_activeRenderTarget : this->m_sceneFBO)->getTextureID (0);
+    return this->m_sceneFBO->getTextureID (0);
 }
-
-void CWallpaper::setActiveRenderTarget (const std::shared_ptr<const CFBO>& fbo) { this->m_activeRenderTarget = fbo; }
 
 void CWallpaper::setupShaders () {
     // reserve shaders in OpenGL
@@ -342,7 +340,7 @@ std::shared_ptr<const CFBO> CWallpaper::findFBO (const std::string& name) const 
 }
 
 std::shared_ptr<const CFBO> CWallpaper::getFBO () const {
-    return this->m_activeRenderTarget ? this->m_activeRenderTarget : this->m_sceneFBO;
+    return this->m_sceneFBO;
 }
 
 std::unique_ptr<CWallpaper> CWallpaper::fromWallpaper (

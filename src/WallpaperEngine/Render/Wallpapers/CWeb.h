@@ -42,6 +42,14 @@ public:
     void setSize (int width, int height);
 
     /**
+     * Pause/resume hook (fullscreen app detected, etc). On pause the page is navigated to
+     * about:blank so CEF's renderer/GPU work goes idle — a "paused" web wallpaper otherwise
+     * keeps animating at full rate, since the base setPause is a no-op for web. On resume
+     * the original page is reloaded. Runs on the render thread (RenderContext::setPause).
+     */
+    void setPause (bool newState) override;
+
+    /**
      * Live-applies a user property to the running page (no reload). Called from the IPC
      * thread: it only enqueues the property name; the actual wallpaperPropertyListener.
      * applyUserProperties JS is built and executed on the render thread (see
@@ -64,6 +72,10 @@ protected:
     // each property to the page via wallpaperPropertyListener.applyUserProperties. Runs on
     // the render thread so all CEF/browser access stays single-threaded.
     void flushPendingProperties ();
+    // Navigate the page to about:blank (suspended) or back to the wallpaper URL, reconciling
+    // m_suspended with what the browser currently shows. Safe to call before the browser is
+    // ready (no-op until tickInput reconciles once it exists).
+    void applySuspendState ();
 
     friend class CWallpaper;
 
@@ -102,5 +114,12 @@ private:
     // Live property pushes queued from the IPC thread, drained on the render thread.
     std::mutex m_pendingPropMutex;
     std::vector<std::string> m_pendingProperties;
+
+    // Idle suspension (about:blank when paused). m_htmlURL is the wallpaper's real page;
+    // m_suspended is the desired state (set by setPause); m_navigatedBlank tracks what the
+    // browser currently shows so applySuspendState only navigates on an actual change.
+    std::string m_htmlURL;
+    bool m_suspended = false;
+    bool m_navigatedBlank = false;
 };
 }

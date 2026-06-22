@@ -167,6 +167,8 @@ CWeb::CWeb (
     // use the custom scheme for the wallpaper's files
     const std::string htmlURL = WPSchemeHandlerFactory::generateSchemeName (this->getWeb ().project.workshopId)
 	+ "://root/" + this->getWeb ().filename;
+    // Remember it so idle-suspension can reload the page after about:blank (see setPause).
+    this->m_htmlURL = htmlURL;
     // CreateBrowserSync deadlocks in single-threaded mode because it blocks the
     // thread that must also pump CefDoMessageLoopWork().  Use async CreateBrowser
     // and finish initialisation in renderFrame() once OnAfterCreated fires.
@@ -207,10 +209,43 @@ void CWeb::tickInput (const glm::ivec4& viewport) {
     }
 
     if (this->m_browser) {
+        // Honor a pause/resume that arrived before the browser existed, then no-op.
+        this->applySuspendState ();
         this->updateMouse (viewport);
         this->pumpMedia ();
         this->pumpAudio ();
         this->flushPendingProperties ();
+    }
+}
+
+void CWeb::setPause (bool newState) {
+    this->m_suspended = newState;
+    this->applySuspendState ();
+}
+
+void CWeb::applySuspendState () {
+    if (!this->m_browser || this->m_suspended == this->m_navigatedBlank) {
+        return;
+    }
+    CefRefPtr<CefFrame> frame = this->m_browser->GetMainFrame ();
+    if (!frame) {
+        return;
+    }
+    // about:blank drops all GPU/JS work; reloading m_htmlURL re-runs the page from scratch
+    // (BrowserClient re-seeds properties on load).
+    frame->LoadURL (this->m_suspended ? "about:blank" : this->m_htmlURL);
+    this->m_navigatedBlank = this->m_suspended;
+
+    if (this->m_suspended) {
+        // Once paused, the app loop stops pumping CEF (WallpaperApplication::render returns
+        // before dispatchEventQueue), so the navigation would never run and the old page
+        // would stay resident and busy. Drive it to completion here (~300ms) so we actually
+        // tear the page down. On resume the normal render loop pumps the reload, so no
+        // blocking pump is needed there.
+        for (int i = 0; i < 60; ++i) {
+            CefDoMessageLoopWork ();
+            usleep (5000);
+        }
     }
 }
 

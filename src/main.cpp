@@ -10,6 +10,7 @@
 #include <vector>
 #include <atomic>
 #include <unistd.h>
+#include <poll.h>
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -197,6 +198,39 @@ static void ipc_thread_func (int srv_fd) {
     }
 }
 
+// Watch the daemon (parent) for death and self-exit when it's gone, so a crashed or
+// killed wepapered never leaves orphaned LWE renderers running on the desktop.
+//
+// We reuse the READY pipe: the daemon holds the read end, the subprocess the write end
+// (fd). Once the read end is fully closed — which only happens when the daemon process
+// dies, since it keeps the fd open for our whole lifetime — poll() on the write end
+// reports POLLERR/POLLHUP. We dup the fd so the READY signal can still write+close the
+// original without disturbing this watch, and poll the dup on a detached thread.
+static void start_parent_death_watch (int fd) {
+    if (fd < 0) {
+        return;
+    }
+    const int dupfd = dup (fd);
+    if (dupfd < 0) {
+        return;
+    }
+    std::thread ([dupfd] () {
+        // events=0: POLLERR/POLLHUP/POLLNVAL are reported regardless of requested events,
+        // and we must NOT request POLLOUT (a pipe write end is almost always writable, which
+        // would busy-spin).
+        struct pollfd pfd { dupfd, 0, 0 };
+        while (!g_ipc_stop.load ()) {
+            const int r = poll (&pfd, 1, 1000);
+            if (r > 0 && (pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) != 0) {
+                // Read end gone → daemon died. Don't try to tear down gracefully (the
+                // render/CEF state may be mid-frame); just exit so we stop rendering.
+                _exit (0);
+            }
+        }
+        close (dupfd);
+    }).detach ();
+}
+
 static void initLogging () {
     sLog.addOutput (new std::ostream (std::cout.rdbuf ()));
     sLog.addError  (new std::ostream (std::cerr.rdbuf ()));
@@ -230,6 +264,10 @@ int main (int argc, char* argv[]) {
         const char* ctrl_sock_path = std::getenv ("WEPAPERED_CTRL_SOCK");
         const char* ready_fd_str   = std::getenv ("WEPAPERED_READY_FD");
         int ready_fd = ready_fd_str ? std::atoi (ready_fd_str) : -1;
+
+        // Self-exit if the daemon dies (orphan protection). Uses the READY pipe; harmless
+        // when launched standalone (no WEPAPERED_READY_FD → fd is -1 → no-op).
+        start_parent_death_watch (ready_fd);
 
         // Open control socket if requested
         int srv_fd = -1;

@@ -1047,6 +1047,21 @@ void WallpaperApplication::debugHighlight (int id) const {
     if (const auto* scene = this->activeScene ()) scene->debugHighlight (id);
 }
 
+bool WallpaperApplication::setProperty (const std::string& name, const std::string& value) const {
+    // Live-update a user property (the same map --set-property overrides at startup, see
+    // setupPropertiesForProject). Properties are DynamicValues read by bound material
+    // constants / scripted object values, so this takes effect without reloading the scene.
+    bool any = false;
+    for (const auto& [background, info] : this->m_backgrounds) {
+	const auto it = info->properties.find (name);
+	if (it != info->properties.end () && it->second != nullptr) {
+	    it->second->update (value);
+	    any = true;
+	}
+    }
+    return any;
+}
+
 bool WallpaperApplication::debugEditObject (int id, const std::string& prop, const float* vals, int count) const {
     const auto* scene = this->activeScene ();
     return scene != nullptr && scene->debugEditObject (id, prop, vals, count);

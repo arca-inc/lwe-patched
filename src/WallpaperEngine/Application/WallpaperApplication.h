@@ -90,6 +90,8 @@ public:
     void debugClear () const;
     void debugHighlight (int id) const;
     bool debugEditObject (int id, const std::string& prop, const float* vals, int count) const;
+    // Live-set a user property (e.g. schemecolor, barcount) without reloading the scene.
+    bool setProperty (const std::string& name, const std::string& value) const;
     /**
      * Sets the destination framebuffer for rendering. If not called, the default framebuffer will be used.
      */

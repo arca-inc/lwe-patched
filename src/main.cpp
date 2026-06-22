@@ -96,7 +96,7 @@ static void ipc_thread_func (int srv_fd) {
 
                 // Debug-inspector live commands: handled synchronously here (no reload).
                 static const std::set<std::string> debugCmds = {
-                    "isolate", "hide", "show", "reset", "set", "highlight"
+                    "isolate", "hide", "show", "reset", "set", "highlight", "setproperty"
                 };
                 if (debugCmds.count (c)) {
                     nlohmann::json ack;
@@ -119,6 +119,30 @@ static void ipc_thread_func (int srv_fd) {
                         // Missing/non-integer id clears the highlight.
                         a->debugHighlight (
                             (j.contains ("id") && j["id"].is_number_integer ()) ? j["id"].get<int> () : -1);
+                    } else if (c == "setproperty") {
+                        // Live-apply a user property (schemecolor, barcount, …) with no reload.
+                        const std::string name = j.value ("name", "");
+                        std::string value;
+                        if (j.contains ("value")) {
+                            const auto& v = j["value"];
+                            if (v.is_string ()) {
+                                value = v.get<std::string> ();
+                            } else if (v.is_array ()) {
+                                // colours/vectors arrive as [r,g,b]; join space-separated.
+                                for (auto& e : v) {
+                                    if (!value.empty ()) value += ' ';
+                                    value += e.is_number () ? std::to_string (e.get<double> ()) : e.dump ();
+                                }
+                            } else if (v.is_boolean ()) {
+                                value = v.get<bool> () ? "1" : "0";
+                            } else if (v.is_number ()) {
+                                value = std::to_string (v.get<double> ());
+                            }
+                        }
+                        if (name.empty () || a == nullptr || !a->setProperty (name, value)) {
+                            ack["ok"] = false;
+                            ack["error"] = "unknown property or no app";
+                        }
                     } else if (c == "set") {
                         const std::string prop = j.value ("prop", "");
                         const int id = j.value ("id", -1);

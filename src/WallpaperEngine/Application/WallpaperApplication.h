@@ -88,6 +88,7 @@ public:
     void debugIsolate (std::optional<int> id) const;
     void debugSetHidden (int id, bool hidden) const;
     void debugClear () const;
+    void debugHighlight (int id) const;
     bool debugEditObject (int id, const std::string& prop, const float* vals, int count) const;
     /**
      * Sets the destination framebuffer for rendering. If not called, the default framebuffer will be used.

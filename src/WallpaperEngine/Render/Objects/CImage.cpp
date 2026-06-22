@@ -905,6 +905,12 @@ void CImage::render () {
 	return;
     }
 
+    // Inspector highlight: blink the selected object (~2 Hz) so it's identifiable on screen.
+    if (this->getScene ().getHighlightId () == this->getId ()
+	&& std::fmod (this->getScene ().getTime (), 0.5) < 0.25) {
+	return;
+    }
+
     if (this->m_passthroughFBO != nullptr) {
 	auto sceneFBO = this->getScene().getFBO();
 	GLint w = static_cast<GLint>(sceneFBO->getRealWidth());
@@ -1099,12 +1105,19 @@ void CImage::updateScreenSpacePosition () {
     this->updateGeometryBuffers ();
 
     // Build rotation from angles (already in radians from scene.json — see CParticle.cpp:2119)
-    // Negate X and Z rotations to account for Y-flipped coordinate system (CParticle.cpp:2120)
-    const float angle = this->resolveTransform (this->getImage ()).angle;
+    // Negate X and Z rotations to account for Y-flipped coordinate system (CParticle.cpp:2120).
+    // The accumulated z comes from resolveTransform (so parent group rotation propagates); the
+    // object's own x/y come from its angles directly (parents rarely set x/y, and the renderer
+    // never propagated them — applying them here makes the inspector's full x/y/z editable).
+    const float zAngle = this->resolveTransform (this->getImage ()).angle;
+    const glm::vec3 own = (this->getImage ().angles && this->getImage ().angles->value)
+	? this->getImage ().angles->value->getVec3 () : glm::vec3 (0.0f);
     glm::mat4 rotModel = glm::mat4 (1.0f);
-    if (angle != 0.0f) {
+    if (zAngle != 0.0f || own.x != 0.0f || own.y != 0.0f) {
 	rotModel = glm::translate (rotModel, this->m_sceneCenter);
-	rotModel = glm::rotate (rotModel, -angle, glm::vec3 (0.0f, 0.0f, 1.0f));
+	rotModel = glm::rotate (rotModel, -zAngle, glm::vec3 (0.0f, 0.0f, 1.0f));
+	rotModel = glm::rotate (rotModel, own.y, glm::vec3 (0.0f, 1.0f, 0.0f));
+	rotModel = glm::rotate (rotModel, -own.x, glm::vec3 (1.0f, 0.0f, 0.0f));
 	rotModel = glm::translate (rotModel, -this->m_sceneCenter);
     }
 

@@ -42,8 +42,12 @@ public:
     void debugIsolate (std::optional<int> id) const;
     // Hide / show one object (skipObjects list).
     void debugSetHidden (int id, bool hidden) const;
-    // Clear isolate + all hidden flags.
+    // Clear isolate + all hidden flags + highlight.
     void debugClear () const;
+    // Blink-highlight one object so it's identifiable on screen while editing it in the
+    // inspector. id < 0 clears. Mutable: set from the IPC thread, read by the render loop.
+    void debugHighlight (int id) const { this->m_highlightId = id; }
+    [[nodiscard]] int getHighlightId () const { return this->m_highlightId; }
     // Live-edit one object's transform for testing. prop ∈
     // {origin, scale, angle, alpha, visible}. vals carries 1 or 3 floats depending
     // on the prop. Returns false if the id or prop is unknown. The change sticks
@@ -95,6 +99,7 @@ private:
     // Guards the debug objectFilter/skipObjects settings against the render loop,
     // which reads them every frame while the IPC thread mutates them.
     mutable std::mutex m_debugMutex;
+    mutable int m_highlightId = -1;
     ObjectUniquePtr m_bloomObjectData;
     CObject* m_bloomObject = nullptr;
     std::map<int, CObject*> m_objects = {};

@@ -475,6 +475,12 @@ void CText::render () {
     if (!m_valid) return;
     if (!m_text.visible->value->getBool ()) return;
 
+    // Inspector highlight: blink the selected object (~2 Hz) so it's identifiable on screen.
+    if (this->getScene ().getHighlightId () == this->getId ()
+	&& std::fmod (this->getScene ().getTime (), 0.5) < 0.25) {
+	return;
+    }
+
     // Capture the VAO/program bound by the scene *before* doing anything: the
     // script tick below can rebuild the glyph texture, which rebinds our own VAO
     // (and leaves VAO 0). CPass-based effect passes that render after this text

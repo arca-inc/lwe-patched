@@ -1043,6 +1043,10 @@ void WallpaperApplication::debugClear () const {
     if (const auto* scene = this->activeScene ()) scene->debugClear ();
 }
 
+void WallpaperApplication::debugHighlight (int id) const {
+    if (const auto* scene = this->activeScene ()) scene->debugHighlight (id);
+}
+
 bool WallpaperApplication::debugEditObject (int id, const std::string& prop, const float* vals, int count) const {
     const auto* scene = this->activeScene ();
     return scene != nullptr && scene->debugEditObject (id, prop, vals, count);

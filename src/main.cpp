@@ -96,7 +96,7 @@ static void ipc_thread_func (int srv_fd) {
 
                 // Debug-inspector live commands: handled synchronously here (no reload).
                 static const std::set<std::string> debugCmds = {
-                    "isolate", "hide", "show", "reset", "set"
+                    "isolate", "hide", "show", "reset", "set", "highlight"
                 };
                 if (debugCmds.count (c)) {
                     nlohmann::json ack;
@@ -115,6 +115,10 @@ static void ipc_thread_func (int srv_fd) {
                         else { ack["ok"] = false; ack["error"] = "missing id"; }
                     } else if (c == "reset") {
                         a->debugClear ();
+                    } else if (c == "highlight") {
+                        // Missing/non-integer id clears the highlight.
+                        a->debugHighlight (
+                            (j.contains ("id") && j["id"].is_number_integer ()) ? j["id"].get<int> () : -1);
                     } else if (c == "set") {
                         const std::string prop = j.value ("prop", "");
                         const int id = j.value ("id", -1);

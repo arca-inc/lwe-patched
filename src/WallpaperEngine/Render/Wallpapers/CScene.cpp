@@ -443,7 +443,10 @@ std::string CScene::toInspectorJSON () const {
 		jo["groupAngle"] = (obj.groupAngles && obj.groupAngles->value)
 		    ? obj.groupAngles->value->getVec3 ().z : 0.0f;
 	    }
-	    jo["angle"] = (img->angles && img->angles->value) ? img->angles->value->getVec3 ().z : 0.0f;
+	    // Full x/y/z rotation vector. For a compose layer the transform lives in
+	    // groupAngles (resolveTransform reads those), so report those; for a regular
+	    // image report its own angles. Edited via the "angles" debug prop.
+	    jo["angles"] = compose ? vec3 (obj.groupAngles) : vec3 (img->angles);
 	    jo["visible"] = boolOf (img->visible, true);
 	    jo["alpha"] = floatOf (img->alpha, 1.0f);
 	    jo["size"] = JSON::array ({img->size.x, img->size.y});
@@ -511,6 +514,7 @@ void CScene::debugClear () const {
     auto& debug = this->getContext ().getApp ().getContext ().settings.render.debug;
     debug.objectFilter = std::nullopt;
     debug.skipObjects.clear ();
+    this->m_highlightId = -1;
 }
 
 const Object* CScene::findObjectData (int id) const {
@@ -565,6 +569,11 @@ bool CScene::debugEditObject (int id, const std::string& prop, const float* vals
 	if (img) return setVec3 (img->scale);
 	if (txt) return setVec3 (txt->scale);
 	return setVec3 (obj->groupScale);
+    }
+    if (prop == "angles") {
+	// Full x/y/z rotation vector. Compose layers carry their rotation in groupAngles
+	// (resolveTransform reads those); regular images use their own angles.
+	return setVec3 ((img && !compose) ? img->angles : obj->groupAngles);
     }
     if (prop == "angle" || prop == "groupAngle") {
 	// Single z-rotation: preserve x/y, override z.

@@ -1,4 +1,3 @@
-#include "WallpaperEngine/Render/Objects/CComposeLayer.h"
 #include "WallpaperEngine/Render/Objects/CImage.h"
 #include "WallpaperEngine/Render/Objects/CParticle.h"
 #include "WallpaperEngine/Render/Objects/CSound.h"
@@ -274,9 +273,12 @@ Render::CObject* CScene::createObject (const Object& object) {
 Render::CObject* CScene::dispatchObjectType (const Object& object) {
     Render::CObject* renderObject = nullptr;
 
-    if (isComposeLayer (object)) {
-	renderObject = new Objects::CComposeLayer (*this, object);
-    } else if (object.is<Image> ()) {
+    if (object.is<Image> ()) {
+	// Compose layers (util/composelayer.json) are passthrough images: they re-sample the
+	// scene framebuffer (_rt_FullFrameBuffer) through their own transform. CImage already
+	// implements the passthrough path, so render them as normal images — that draws the
+	// reflection / audio-reactive halo the layer produces. (The old no-op CComposeLayer
+	// made these layers disappear, e.g. Blood Goddess' audio ring.)
 	renderObject = createImageObject (*this, *object.as<Image> ());
     } else if (object.is<Sound> ()) {
 	renderObject = new Objects::CSound (*this, *object.as<Sound> ());

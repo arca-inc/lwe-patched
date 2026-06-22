@@ -41,18 +41,25 @@ CObject::ResolvedTransform CObject::resolveTransform (const Object& object, cons
     glm::vec3 scale = glm::vec3 (1.0f);
     float angle = 0.0f;
 
-    // A compose layer (util/composelayer.json) is a passthrough effect, not a group: its
-    // groupScale/groupAngle parameterise the framebuffer re-sample (the floor/glass
-    // reflection), NOT the layout of its children. So it contributes an identity
-    // scale/angle to the child transform chain — children inherit only from ancestors
-    // above the compose layer (e.g. the Solid the cafe chalkboard hangs off). Applying the
-    // layer's own group transform here was what made the chalkboard ~2.5x too big and
-    // cancelled its parent's tilt. Its origin still positions the group.
+    // A compose layer (util/composelayer.json) is a passthrough effect whose
+    // groupScale/groupAngle parameterise its own framebuffer re-sample (the floor/glass
+    // reflection, or an audio-reactive halo/ring), NOT the layout of its children.
+    //   - depth == 0: this IS the compose layer's own transform (it's being rendered) — use
+    //     its groupScale/groupAngle so the re-sampled region scales/rotates as authored
+    //     (e.g. the audio ring pulses with its group scale).
+    //   - depth  > 0: the compose layer is an ANCESTOR in some child's chain — contribute
+    //     identity, so children inherit only from ancestors above it. Propagating the
+    //     layer's group transform here was what made the cafe chalkboard ~2.5x too big and
+    //     cancelled its parent's tilt. The origin still positions the group either way.
     const bool composeLayer = object.is<Image> () && object.as<Image> ()->model != nullptr
 	&& object.as<Image> ()->model->filename.find ("composelayer") != std::string::npos;
 
     if (composeLayer) {
-	// identity scale/angle (keep origin)
+	if (depth == 0) {
+	    scale = object.groupScale->value->getVec3 ();
+	    angle = object.groupAngles->value->getVec3 ().z;
+	}
+	// depth > 0: identity scale/angle (keep origin)
     } else if (object.is<Image> ()) {
 	const auto* image = object.as<Image> ();
 	scale = image->scale->value->getVec3 ();

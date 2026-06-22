@@ -41,13 +41,19 @@ CObject::ResolvedTransform CObject::resolveTransform (const Object& object, cons
     glm::vec3 scale = glm::vec3 (1.0f);
     float angle = 0.0f;
 
-    // A compose layer is an Image by type but behaves as a group: its transform lives in
-    // the group fields (groupScale/groupAngles), not the image scale/angles. Use those so
-    // the composited buffer is placed and scaled correctly.
+    // A compose layer (util/composelayer.json) is a passthrough effect, not a group: its
+    // groupScale/groupAngle parameterise the framebuffer re-sample (the floor/glass
+    // reflection), NOT the layout of its children. So it contributes an identity
+    // scale/angle to the child transform chain — children inherit only from ancestors
+    // above the compose layer (e.g. the Solid the cafe chalkboard hangs off). Applying the
+    // layer's own group transform here was what made the chalkboard ~2.5x too big and
+    // cancelled its parent's tilt. Its origin still positions the group.
     const bool composeLayer = object.is<Image> () && object.as<Image> ()->model != nullptr
 	&& object.as<Image> ()->model->filename.find ("composelayer") != std::string::npos;
 
-    if (object.is<Image> () && !composeLayer) {
+    if (composeLayer) {
+	// identity scale/angle (keep origin)
+    } else if (object.is<Image> ()) {
 	const auto* image = object.as<Image> ();
 	scale = image->scale->value->getVec3 ();
 	angle = image->angles->value->getVec3 ().z;
